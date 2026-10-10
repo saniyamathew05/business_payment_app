@@ -1,11 +1,9 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AuthService {
-  static final SupabaseClient _supabase =
-      Supabase.instance.client;
+  static final SupabaseClient _supabase = Supabase.instance.client;
 
-  static User? get currentUser =>
-      _supabase.auth.currentUser;
+  static User? get currentUser => _supabase.auth.currentUser;
 
   static Future<AuthResponse> signIn({
     required String email,
@@ -23,9 +21,7 @@ class AuthService {
     return response;
   }
 
-  static Future<Map<String, dynamic>?> getProfile(
-    String userId,
-  ) async {
+  static Future<Map<String, dynamic>?> getProfile(String userId) async {
     return _supabase
         .from('profiles')
         .select('name, role')

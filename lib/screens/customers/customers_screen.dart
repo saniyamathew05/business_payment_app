@@ -1,786 +1,515 @@
 import 'package:flutter/material.dart';
 
-
-
+import '../../models/customer.dart';
+import '../../services/customer_service.dart';
+import '../../services/transaction_service.dart';
 import 'add_customer_screen.dart';
-
 import 'customer_details_screen.dart';
 
-import '../../models/customer.dart';
-
-import '../../services/customer_service.dart';
-
-import '../../services/transaction_service.dart';
-
-
-
+/// LedgerPro customer directory styled to match the supplied reference mockup.
+/// Keeps the existing CustomerService and TransactionService data flow.
 class CustomersScreen extends StatefulWidget {
-
-  const CustomersScreen({
-
-    super.key,
-
-  });
-
-
+  const CustomersScreen({super.key});
 
   @override
-
-  State<CustomersScreen> createState() =>
-
-      _CustomersScreenState();
-
+  State<CustomersScreen> createState() => _CustomersScreenState();
 }
 
-
-
-class _CustomersScreenState
-
-    extends State<CustomersScreen> {
-
-  final TextEditingController _searchController =
-
-      TextEditingController();
-
-
-
+class _CustomersScreenState extends State<CustomersScreen> {
+  final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  String _selectedLocation = 'All';
 
-
+  static const _purple = Color(0xFF4F2BCB);
+  static const _purpleBright = Color(0xFF6D4AFF);
+  static const _page = Color(0xFFF6F7FC);
+  static const _ink = Color(0xFF11152E);
+  static const _muted = Color(0xFF68708B);
+  static const _border = Color(0xFFE5E7F2);
 
   @override
-
   void initState() {
-
     super.initState();
-
-
-
     _loadData();
-
-
-
     _searchController.addListener(() {
-
-      setState(() {
-
-        _searchQuery =
-
-            _searchController.text.trim().toLowerCase();
-
-      });
-
+      if (!mounted) return;
+      setState(
+        () => _searchQuery = _searchController.text.trim().toLowerCase(),
+      );
     });
-
   }
-
-
 
   Future<void> _loadData() async {
-
     await CustomerService.loadCustomers();
-
     await TransactionService.loadCustomerBalances();
-
-
-
-    if (mounted) {
-
-      setState(() {});
-
-    }
-
+    if (mounted) setState(() {});
   }
-
-
 
   @override
-
   void dispose() {
-
     _searchController.dispose();
-
     super.dispose();
-
   }
 
-
+  List<String> get _locations {
+    final values =
+        CustomerService.customers
+            .map((c) => c.location.trim())
+            .where((s) => s.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
+    return ['All', ...values];
+  }
 
   List<Customer> get _filteredCustomers {
-
-    if (_searchQuery.isEmpty) {
-
-      return CustomerService.customers;
-
-    }
-
-
-
     return CustomerService.customers.where((customer) {
-
-      return customer.businessName
-
-              .toLowerCase()
-
-              .contains(_searchQuery) ||
-
-          customer.location
-
-              .toLowerCase()
-
-              .contains(_searchQuery) ||
-
-          customer.phone
-
-              .toLowerCase()
-
-              .contains(_searchQuery);
-
+      final matchesSearch =
+          _searchQuery.isEmpty ||
+          customer.businessName.toLowerCase().contains(_searchQuery) ||
+          customer.location.toLowerCase().contains(_searchQuery) ||
+          customer.phone.toLowerCase().contains(_searchQuery);
+      final matchesLocation =
+          _selectedLocation == 'All' ||
+          customer.location.trim().toLowerCase() ==
+              _selectedLocation.toLowerCase();
+      return matchesSearch && matchesLocation;
     }).toList();
-
   }
-
-
 
   Future<void> _addCustomer() async {
-
-    final result =
-
-        await Navigator.push<bool>(
-
+    final result = await Navigator.push<bool>(
       context,
-
-      MaterialPageRoute(
-
-        builder: (context) =>
-
-            const AddCustomerScreen(),
-
-      ),
-
+      MaterialPageRoute(builder: (_) => const AddCustomerScreen()),
     );
-
-
-
-    if (result == true) {
-
-      await _loadData();
-
-    }
-
+    if (result == true) await _loadData();
   }
 
-
-
-  Future<void> _openCustomer(
-
-    Customer customer,
-
-  ) async {
-
+  Future<void> _openCustomer(Customer customer) async {
     await Navigator.push(
-
       context,
-
       MaterialPageRoute(
-
-        builder: (context) =>
-
-            CustomerDetailsScreen(
-
-          customer: customer,
-
-        ),
-
+        builder: (_) => CustomerDetailsScreen(customer: customer),
       ),
-
     );
-
-
-
     await _loadData();
-
   }
 
-
-
-  Future<void> _deleteCustomer(
-
-    Customer customer,
-
-  ) async {
-
-    final shouldDelete =
-
-        await showDialog<bool>(
-
+  Future<void> _deleteCustomer(Customer customer) async {
+    final confirmed = await showDialog<bool>(
       context: context,
-
-      builder: (dialogContext) {
-
-        return AlertDialog(
-
-          title: const Text(
-
-            'Remove Customer?',
-
-          ),
-
-          content: Text(
-
-            'Are you sure you want to remove '
-
-            '"${customer.businessName}"?\n\n'
-
-            'The customer will be removed from the '
-
-            'active customer list, but their purchase '
-
-            'and payment history will be preserved.',
-
-          ),
-
-          actions: [
-
-            TextButton(
-
-              onPressed: () {
-
-                Navigator.pop(
-
-                  dialogContext,
-
-                  false,
-
-                );
-
-              },
-
-              child: const Text(
-
-                'Cancel',
-
-              ),
-
-            ),
-
-            FilledButton(
-
-              onPressed: () {
-
-                Navigator.pop(
-
-                  dialogContext,
-
-                  true,
-
-                );
-
-              },
-
-              child: const Text(
-
-                'Remove',
-
-              ),
-
-            ),
-
-          ],
-
-        );
-
-      },
-
-    );
-
-
-
-    if (shouldDelete != true) {
-
-      return;
-
-    }
-
-
-
-    final success =
-
-        await CustomerService.deleteCustomer(
-
-      customer.id,
-
-    );
-
-
-
-    if (!mounted) {
-
-      return;
-
-    }
-
-
-
-    if (success) {
-
-      ScaffoldMessenger.of(context)
-
-          .showSnackBar(
-
-        SnackBar(
-
-          content: Text(
-
-            '${customer.businessName} was removed.',
-
-          ),
-
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Remove customer?'),
+        content: Text(
+          'Remove "${customer.businessName}" from the active customer list? Purchase and payment history will be preserved.',
         ),
-
-      );
-
-
-
-      await _loadData();
-
-    } else {
-
-      ScaffoldMessenger.of(context)
-
-          .showSnackBar(
-
-        SnackBar(
-
-          content: Text(
-
-            CustomerService.errorMessage ??
-
-                'Could not remove customer.',
-
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
           ),
-
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: _purple),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final success = await CustomerService.deleteCustomer(customer.id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          success
+              ? '${customer.businessName} was removed.'
+              : CustomerService.errorMessage ?? 'Could not remove customer.',
         ),
-
-      );
-
-    }
-
+      ),
+    );
+    if (success) await _loadData();
   }
-
-
 
   @override
-
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    const accent = Color(0xFF0F766E);
-    final accentLight = isDark ? const Color(0xFF2A9D8F) : accent;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final background = isDark
+        ? Theme.of(context).scaffoldBackgroundColor
+        : _page;
+    final surface = Theme.of(context).colorScheme.surface;
+    final foreground = Theme.of(context).colorScheme.onSurface;
 
     return Scaffold(
-      backgroundColor: theme.colorScheme.surface,
+      backgroundColor: background,
       appBar: AppBar(
-        backgroundColor: theme.colorScheme.surface,
-        foregroundColor: theme.colorScheme.onSurface,
+        backgroundColor: surface,
+        foregroundColor: foreground,
         elevation: 0,
         scrolledUnderElevation: 0,
         titleSpacing: 20,
         title: const Text(
           'Customers',
           style: TextStyle(
-            fontSize: 22,
             fontWeight: FontWeight.w800,
-            letterSpacing: -0.3,
+            fontSize: 21,
+            letterSpacing: -0.4,
           ),
         ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _addCustomer,
-        backgroundColor: accentLight,
-        foregroundColor: Colors.white,
-        elevation: 4,
-        icon: const Icon(Icons.person_add_alt_1_rounded),
-        label: const Text(
-          'Add Customer',
-          style: TextStyle(fontWeight: FontWeight.w700),
-        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: FilledButton.icon(
+              onPressed: _addCustomer,
+              style: FilledButton.styleFrom(
+                backgroundColor: _purple,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              icon: const Icon(Icons.add_rounded, size: 19),
+              label: const Text(
+                'Add Customer',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+        ],
       ),
       body: RefreshIndicator(
-        color: accentLight,
-        backgroundColor: theme.colorScheme.surface,
+        color: _purpleBright,
         onRefresh: _loadData,
         child: ValueListenableBuilder<int>(
           valueListenable: CustomerService.dataVersion,
-          builder: (context, customerVersion, child) {
-            return ValueListenableBuilder<int>(
-              valueListenable: TransactionService.dataVersion,
-              builder: (context, transactionVersion, child) {
-                final customers = _filteredCustomers;
-                return Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 14),
-                      child: TextField(
-                        controller: _searchController,
-                        style: TextStyle(
-                          color: theme.colorScheme.onSurface,
-                          fontWeight: FontWeight.w500,
+          builder: (context, _, _) => ValueListenableBuilder<int>(
+            valueListenable: TransactionService.dataVersion,
+            builder: (context, _, _) {
+              final customers = _filteredCustomers;
+              return Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
+                    child: TextField(
+                      controller: _searchController,
+                      style: TextStyle(color: foreground, fontSize: 14),
+                      decoration: InputDecoration(
+                        hintText: 'Search by name, phone or location...',
+                        hintStyle: const TextStyle(color: _muted, fontSize: 13),
+                        prefixIcon: const Icon(
+                          Icons.search_rounded,
+                          color: _muted,
+                          size: 21,
                         ),
-                        decoration: InputDecoration(
-                          hintText: 'Search customers...',
-                          hintStyle: TextStyle(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                          prefixIcon: Icon(
-                            Icons.search_rounded,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                          suffixIcon: _searchQuery.isNotEmpty
-                              ? IconButton(
-                                  onPressed: () => _searchController.clear(),
-                                  icon: const Icon(Icons.close_rounded),
-                                )
-                              : null,
-                          filled: true,
-                          fillColor: isDark
-                              ? const Color(0xFF121918)
-                              : const Color(0xFFF3F6F5),
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 16,
-                            horizontal: 18,
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide(
-                              color: isDark
-                                  ? const Color(0xFF26302E)
-                                  : const Color(0xFFE2E9E7),
-                            ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(
-                              color: accent,
-                              width: 1.5,
-                            ),
+                        suffixIcon: _searchQuery.isEmpty
+                            ? null
+                            : IconButton(
+                                onPressed: _searchController.clear,
+                                icon: const Icon(Icons.close_rounded),
+                              ),
+                        filled: true,
+                        fillColor: surface,
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 14,
+                          horizontal: 14,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: _border),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: _purple,
+                            width: 1.4,
                           ),
                         ),
                       ),
                     ),
-                    Expanded(
-                      child: customers.isEmpty
-                          ? _EmptyCustomers(
-                              hasSearch: _searchQuery.isNotEmpty,
-                            )
-                          : ListView.builder(
-                              padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
-                              itemCount: customers.length,
-                              itemBuilder: (context, index) {
-                                final customer = customers[index];
-                                final balance =
-                                    TransactionService.getCustomerBalance(customer.id);
-                                return _CustomerCard(
-                                  customer: customer,
-                                  balance: balance,
-                                  onTap: () => _openCustomer(customer),
-                                  onDelete: () => _deleteCustomer(customer),
-                                );
-                              },
-                            ),
+                  ),
+                  SizedBox(
+                    height: 42,
+                    child: ListView.separated(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 4,
+                      ),
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _locations.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 8),
+                      itemBuilder: (context, index) {
+                        final location = _locations[index];
+                        final selected = location == _selectedLocation;
+                        final count = location == 'All'
+                            ? CustomerService.customers.length
+                            : CustomerService.customers
+                                  .where(
+                                    (c) =>
+                                        c.location.trim().toLowerCase() ==
+                                        location.toLowerCase(),
+                                  )
+                                  .length;
+                        return ChoiceChip(
+                          selected: selected,
+                          showCheckmark: false,
+                          label: Text('$location ($count)'),
+                          labelStyle: TextStyle(
+                            color: selected ? Colors.white : _ink,
+                            fontSize: 12,
+                            fontWeight: selected
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                          ),
+                          selectedColor: _purpleBright,
+                          backgroundColor: surface,
+                          side: BorderSide(
+                            color: selected ? _purpleBright : _border,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          onSelected: (_) =>
+                              setState(() => _selectedLocation = location),
+                        );
+                      },
                     ),
-                  ],
-                );
-              },
-            );
-          },
+                  ),
+                  const SizedBox(height: 5),
+                  Expanded(
+                    child: customers.isEmpty
+                        ? _EmptyCustomers(
+                            hasSearch:
+                                _searchQuery.isNotEmpty ||
+                                _selectedLocation != 'All',
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+                            itemCount: customers.length,
+                            separatorBuilder: (_, _) => Divider(
+                              height: 1,
+                              color: isDark ? Colors.white12 : _border,
+                              indent: 58,
+                            ),
+                            itemBuilder: (context, index) {
+                              final customer = customers[index];
+                              final balance =
+                                  TransactionService.getCustomerBalance(
+                                    customer.id,
+                                  );
+                              return _CustomerRow(
+                                customer: customer,
+                                balance: balance,
+                                onTap: () => _openCustomer(customer),
+                                onDelete: () => _deleteCustomer(customer),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
   }
-
 }
 
-// CUSTOMER CARD
-
-// -----------------------------------------------------------------------------
-
-
-
-class _CustomerCard
-
-    extends StatelessWidget {
-
-  final Customer customer;
-
-  final double balance;
-
-  final VoidCallback onTap;
-
-  final VoidCallback onDelete;
-
-
-
-  const _CustomerCard({
-
+class _CustomerRow extends StatelessWidget {
+  const _CustomerRow({
     required this.customer,
-
     required this.balance,
-
     required this.onTap,
-
     required this.onDelete,
-
   });
 
+  final Customer customer;
+  final double balance;
+  final VoidCallback onTap;
+  final VoidCallback onDelete;
 
+  static const _purple = Color(0xFF4F2BCB);
+  static const _muted = Color(0xFF68708B);
+
+  String _money(double amount) =>
+      '₹ ${amount.abs().toStringAsFixed(0).replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => ',')}';
 
   @override
-
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    const accent = Color(0xFF0F766E);
-    final accentLight = isDark ? const Color(0xFF2A9D8F) : accent;
-    final hasDue = balance > 0;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF121918) : Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: isDark ? const Color(0xFF26302E) : const Color(0xFFE5EBE9),
-        ),
-        boxShadow: isDark
-            ? null
-            : const [
-                BoxShadow(
-                  color: Color(0x0D000000),
-                  blurRadius: 14,
-                  offset: Offset(0, 5),
-                ),
-              ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(18),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: accentLight.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    customer.businessName.isNotEmpty
-                        ? customer.businessName[0].toUpperCase()
-                        : '?',
-                    style: TextStyle(
-                      color: accentLight,
-                      fontSize: 19,
-                      fontWeight: FontWeight.w800,
-                    ),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final foreground = Theme.of(context).colorScheme.onSurface;
+    final surface = Theme.of(context).colorScheme.surface;
+    final initials = customer.businessName.trim().isEmpty
+        ? '?'
+        : customer.businessName
+              .trim()
+              .split(RegExp(r'\s+'))
+              .take(2)
+              .map((p) => p[0])
+              .join()
+              .toUpperCase();
+    final due = balance > 0;
+    return Material(
+      color: surface,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 13),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: isDark
+                        ? const [Color(0xFF41318D), Color(0xFF29245D)]
+                        : const [Color(0xFFD9D0FF), Color(0xFFB9C8FF)],
                   ),
                 ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        customer.businessName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: theme.colorScheme.onSurface,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 7),
-                      Row(
-                        children: [
-                          Icon(Icons.location_on_outlined,
-                              size: 15,
-                              color: theme.colorScheme.onSurfaceVariant),
-                          const SizedBox(width: 5),
-                          Expanded(
-                            child: Text(
-                              customer.location,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: theme.colorScheme.onSurfaceVariant,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Icon(Icons.phone_outlined,
-                              size: 15,
-                              color: theme.colorScheme.onSurfaceVariant),
-                          const SizedBox(width: 5),
-                          Text(
-                            customer.phone,
-                            style: TextStyle(
-                              color: theme.colorScheme.onSurfaceVariant,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                child: Text(
+                  initials,
+                  style: const TextStyle(
+                    color: _purple,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
                   ),
                 ),
-                const SizedBox(width: 10),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      hasDue ? 'Amount Due' : 'Paid',
+                      customer.businessName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      '₹${balance.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: hasDue ? theme.colorScheme.error : accentLight,
+                        color: foreground,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Row(
-                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.chevron_right_rounded,
-                            size: 19,
-                            color: theme.colorScheme.onSurfaceVariant),
-                        PopupMenuButton<String>(
-                          tooltip: 'Customer options',
-                          padding: EdgeInsets.zero,
-                          icon: Icon(Icons.more_horiz_rounded,
-                              size: 20,
-                              color: theme.colorScheme.onSurfaceVariant),
-                          onSelected: (value) {
-                            if (value == 'delete') onDelete();
-                          },
-                          itemBuilder: (context) => [
-                            const PopupMenuItem<String>(
-                              value: 'delete',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.delete_outline),
-                                  SizedBox(width: 10),
-                                  Text('Remove Customer'),
-                                ],
-                              ),
-                            ),
-                          ],
+                        const Icon(
+                          Icons.location_on_outlined,
+                          size: 13,
+                          color: _muted,
+                        ),
+                        const SizedBox(width: 3),
+                        Flexible(
+                          child: Text(
+                            customer.location,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: _muted, fontSize: 11),
+                          ),
+                        ),
+                        const Text(
+                          '  ·  ',
+                          style: TextStyle(color: _muted, fontSize: 11),
+                        ),
+                        Flexible(
+                          child: Text(
+                            customer.phone,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: _muted, fontSize: 11),
+                          ),
                         ),
                       ],
                     ),
                   ],
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                balance == 0 ? '₹ 0' : _money(balance),
+                style: TextStyle(
+                  color: balance == 0
+                      ? const Color(0xFF059669)
+                      : due
+                      ? const Color(0xFFDC2626)
+                      : const Color(0xFF059669),
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                ),
+              ),
+              PopupMenuButton<String>(
+                tooltip: 'Customer options',
+                icon: const Icon(
+                  Icons.more_vert_rounded,
+                  size: 19,
+                  color: _muted,
+                ),
+                onSelected: (value) {
+                  if (value == 'delete') onDelete();
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: 'delete',
+                    child: Text('Remove customer'),
+                  ),
+                ],
+              ),
+              const Icon(Icons.chevron_right_rounded, color: _muted, size: 20),
+            ],
           ),
         ),
       ),
     );
   }
-
 }
 
-// EMPTY STATE
-
-// -----------------------------------------------------------------------------
-
-
-
-class _EmptyCustomers
-
-    extends StatelessWidget {
-
+class _EmptyCustomers extends StatelessWidget {
+  const _EmptyCustomers({required this.hasSearch});
   final bool hasSearch;
 
-
-
-  const _EmptyCustomers({
-
-    required this.hasSearch,
-
-  });
-
-
-
   @override
-
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    const accent = Color(0xFF0F766E);
-    final isDark = theme.brightness == Brightness.dark;
-    final accentLight = isDark ? const Color(0xFF2A9D8F) : accent;
-
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(30),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 82,
-              height: 82,
-              decoration: BoxDecoration(
-                color: accentLight.withValues(alpha: 0.10),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                hasSearch
-                    ? Icons.search_off_rounded
-                    : Icons.people_outline_rounded,
-                size: 38,
-                color: accentLight,
-              ),
-            ),
-            const SizedBox(height: 18),
-            Text(
-              hasSearch ? 'No customers found' : 'No customers yet',
-              style: TextStyle(
-                color: theme.colorScheme.onSurface,
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              hasSearch
-                  ? 'Try a different search.'
-                  : 'Add your first customer using the button below.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: theme.colorScheme.onSurfaceVariant,
-                height: 1.4,
-              ),
-            ),
-          ],
+    final color = Theme.of(context).colorScheme.onSurface;
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        const SizedBox(height: 90),
+        Icon(
+          Icons.people_outline_rounded,
+          size: 54,
+          color: color.withValues(alpha: 0.35),
         ),
-      ),
+        const SizedBox(height: 12),
+        Center(
+          child: Text(
+            hasSearch ? 'No matching customers' : 'No customers yet',
+            style: TextStyle(
+              color: color,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Center(
+          child: Text(
+            hasSearch
+                ? 'Try another name, phone number or location.'
+                : 'Add your first customer to get started.',
+            style: TextStyle(
+              color: color.withValues(alpha: 0.65),
+              fontSize: 13,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

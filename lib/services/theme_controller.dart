@@ -1,62 +1,43 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Persists the user's theme choice across app launches.
 class ThemeController {
-  static const String _themeKey = 'theme_mode';
+  ThemeController._();
 
-  static final ValueNotifier<ThemeMode> themeMode =
-      ValueNotifier<ThemeMode>(ThemeMode.system);
+  static final ValueNotifier<ThemeMode> themeMode = ValueNotifier<ThemeMode>(
+    ThemeMode.light,
+  );
+
+  static const String _preferenceKey = 'ledgerpro_theme_mode';
 
   static Future<void> loadTheme() async {
-    final preferences =
-        await SharedPreferences.getInstance();
-
-    final savedTheme =
-        preferences.getString(_themeKey);
-
-    switch (savedTheme) {
-      case 'light':
-        themeMode.value = ThemeMode.light;
-        break;
-
-      case 'dark':
-        themeMode.value = ThemeMode.dark;
-        break;
-
-      case 'system':
-      default:
-        themeMode.value = ThemeMode.system;
-        break;
-    }
+    final preferences = await SharedPreferences.getInstance();
+    final saved = preferences.getString(_preferenceKey);
+    themeMode.value = switch (saved) {
+      'dark' => ThemeMode.dark,
+      'system' => ThemeMode.system,
+      _ => ThemeMode.light,
+    };
   }
 
-  static Future<void> setTheme(
-    ThemeMode mode,
-  ) async {
+  static Future<void> setThemeMode(ThemeMode mode) async {
     themeMode.value = mode;
+    final preferences = await SharedPreferences.getInstance();
+    final saved = switch (mode) {
+      ThemeMode.dark => 'dark',
+      ThemeMode.system => 'system',
+      ThemeMode.light => 'light',
+    };
+    await preferences.setString(_preferenceKey, saved);
+  }
 
-    final preferences =
-        await SharedPreferences.getInstance();
+  /// Compatibility method used by the Settings screen.
+  static Future<void> setTheme(ThemeMode mode) => setThemeMode(mode);
 
-    String value;
-
-    switch (mode) {
-      case ThemeMode.light:
-        value = 'light';
-        break;
-
-      case ThemeMode.dark:
-        value = 'dark';
-        break;
-
-      case ThemeMode.system:
-        value = 'system';
-        break;
-    }
-
-    await preferences.setString(
-      _themeKey,
-      value,
+  static Future<void> toggleTheme() async {
+    await setThemeMode(
+      themeMode.value == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark,
     );
   }
 }

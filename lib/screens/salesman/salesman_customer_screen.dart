@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 
 
 
@@ -13,6 +14,7 @@ import '../../models/transaction.dart';
 import '../payments/payment_screen.dart';
 
 import '../../services/transaction_service.dart';
+import '../../services/salesman_visit_service.dart';
 
 
 
@@ -574,31 +576,36 @@ class _SalesmanCustomerDetailsScreenState
 
                             : () async {
 
-                                await Navigator
-
-                                    .push(
-
+                                Position? visitPosition;
+                                try {
+                                  visitPosition = await SalesmanVisitService.captureLocation();
+                                } catch (error) {
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Enable location before recording this payment: $error')));
+                                  return;
+                                }
+                                if (!context.mounted) return;
+                                final paymentSaved = await Navigator.push<bool>(
                                   context,
-
-                                  MaterialPageRoute(
-
-                                    builder:
-
-                                        (_) =>
-
-                                            PaymentScreen(
-
-                                      customer:
-
-                                          widget.customer,
-
-                                    ),
-
-                                  ),
-
+                                  MaterialPageRoute(builder: (_) => PaymentScreen(customer: widget.customer)),
                                 );
-
-
+                                if (paymentSaved == true) {
+                                  try {
+                                    await SalesmanVisitService.recordStatus(customerId: widget.customer.id, status: 'paid', capturedPosition: visitPosition);
+                                    if (context.mounted) {
+                                      Navigator.pop(context, true);
+                                    }
+                                    return;
+                                  } catch (error) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('Payment was saved, but visit status/location could not be recorded: $error'),
+                                        ),
+                                      );
+                                    }
+                                  }
+                                }
 
                                 await TransactionService
 
@@ -649,6 +656,38 @@ class _SalesmanCustomerDetailsScreenState
                 ),
 
 
+
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (dialogContext) => AlertDialog(
+                        title: const Text('Record no payment'),
+                        content: Text('Confirm that ${widget.customer.businessName} did not pay today. Other salesmen will see this customer as handled for today.'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+                          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Confirm refusal')),
+                        ],
+                      ),
+                    );
+                    if (!context.mounted || confirm != true) return;
+                    try {
+                      await SalesmanVisitService.recordStatus(customerId: widget.customer.id, status: 'rejected');
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Visit recorded with current location.')));
+                        Navigator.pop(context, true);
+                      }
+                    } catch (error) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Could not record visit: $error')),
+                        );
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.person_off_outlined),
+                  label: const Text('Record no payment today'),
+                ),
 
                 const SizedBox(
 

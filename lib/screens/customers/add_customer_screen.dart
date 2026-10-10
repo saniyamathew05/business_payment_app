@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -6,28 +5,21 @@ class AddCustomerScreen extends StatefulWidget {
   const AddCustomerScreen({super.key});
 
   @override
-  State<AddCustomerScreen> createState() =>
-      _AddCustomerScreenState();
+  State<AddCustomerScreen> createState() => _AddCustomerScreenState();
 }
 
-class _AddCustomerScreenState
-    extends State<AddCustomerScreen> {
-  final businessNameController =
-      TextEditingController();
+class _AddCustomerScreenState extends State<AddCustomerScreen> {
+  final businessNameController = TextEditingController();
 
-  final locationController =
-      TextEditingController();
+  final locationController = TextEditingController();
 
-  final phoneController =
-      TextEditingController();
+  final phoneController = TextEditingController();
 
-  final openingBalanceController =
-      TextEditingController();
+  final openingBalanceController = TextEditingController();
 
   bool isSaving = false;
 
-  final SupabaseClient supabase =
-      Supabase.instance.client;
+  final SupabaseClient supabase = Supabase.instance.client;
 
   @override
   void dispose() {
@@ -39,41 +31,27 @@ class _AddCustomerScreenState
   }
 
   Future<void> saveCustomer() async {
-    final businessName =
-        businessNameController.text.trim();
+    final businessName = businessNameController.text.trim();
 
-    final location =
-        locationController.text.trim();
+    final location = locationController.text.trim();
 
-    final phone =
-        phoneController.text.trim();
+    final phone = phoneController.text.trim();
 
     final openingBalance =
-        double.tryParse(
-              openingBalanceController.text.trim(),
-            ) ??
-            0;
+        double.tryParse(openingBalanceController.text.trim()) ?? 0;
 
-    if (businessName.isEmpty ||
-        location.isEmpty ||
-        phone.isEmpty) {
-      _showMessage(
-        'Please fill in all required fields.',
-      );
+    if (businessName.isEmpty || location.isEmpty || phone.isEmpty) {
+      _showMessage('Please fill in all required fields.');
       return;
     }
 
     if (openingBalance < 0) {
-      _showMessage(
-        'Opening balance cannot be negative.',
-      );
+      _showMessage('Opening balance cannot be negative.');
       return;
     }
 
     if (phone.length != 10) {
-      _showMessage(
-        'Please enter a valid 10-digit phone number.',
-      );
+      _showMessage('Please enter a valid 10-digit phone number.');
       return;
     }
 
@@ -82,13 +60,10 @@ class _AddCustomerScreenState
     });
 
     try {
-      final user =
-          supabase.auth.currentUser;
+      final user = supabase.auth.currentUser;
 
       if (user == null) {
-        throw Exception(
-          'You are not logged in to Supabase.',
-        );
+        throw Exception('You are not logged in to Supabase.');
       }
 
       final profile = await supabase
@@ -98,15 +73,11 @@ class _AddCustomerScreenState
           .maybeSingle();
 
       if (profile == null) {
-        throw Exception(
-          'No profile was found for the logged-in user.',
-        );
+        throw Exception('No profile was found for the logged-in user.');
       }
 
       if (profile['role'] != 'owner') {
-        throw Exception(
-          'Your account is not an owner account.',
-        );
+        throw Exception('Your account is not an owner account.');
       }
 
       await supabase.from('customers').insert({
@@ -119,15 +90,11 @@ class _AddCustomerScreenState
 
       if (!mounted) return;
 
-      _showMessage(
-        'Customer saved successfully.',
-      );
+      _showMessage('Customer saved successfully.');
 
       Navigator.pop(context, true);
     } on PostgrestException catch (error) {
-      debugPrint(
-        'SUPABASE ERROR: ${error.message}',
-      );
+      debugPrint('SUPABASE ERROR: ${error.message}');
 
       if (!mounted) return;
 
@@ -137,15 +104,11 @@ class _AddCustomerScreenState
         'Code: ${error.code}',
       );
     } catch (error) {
-      debugPrint(
-        'GENERAL ERROR: $error',
-      );
+      debugPrint('GENERAL ERROR: $error');
 
       if (!mounted) return;
 
-      _showMessage(
-        'Error:\n$error',
-      );
+      _showMessage('Error:\n$error');
     } finally {
       if (mounted) {
         setState(() {
@@ -159,125 +122,79 @@ class _AddCustomerScreenState
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          duration:
-              const Duration(seconds: 5),
-        ),
+        SnackBar(content: Text(message), duration: const Duration(seconds: 5)),
       );
   }
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme =
-        Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      backgroundColor:
-          colorScheme.surface,
+      backgroundColor: colorScheme.surface,
 
       appBar: AppBar(
         title: const Text(
           'Add Customer',
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-          ),
+          style: TextStyle(fontWeight: FontWeight.w800),
         ),
       ),
 
       body: SingleChildScrollView(
-        padding:
-            const EdgeInsets.fromLTRB(
-          20,
-          12,
-          20,
-          40,
-        ),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
         child: Center(
           child: ConstrainedBox(
-            constraints:
-                const BoxConstraints(
-              maxWidth: 650,
-            ),
+            constraints: const BoxConstraints(maxWidth: 650),
             child: Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
                   width: double.infinity,
-                  padding:
-                      const EdgeInsets.all(22),
+                  padding: const EdgeInsets.all(22),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
                         colorScheme.primary,
-                        colorScheme.primary
-                            .withValues(
-                          alpha: 0.78,
-                        ),
+                        colorScheme.primary.withValues(alpha: 0.78),
                       ],
-                      begin:
-                          Alignment.topLeft,
-                      end:
-                          Alignment.bottomRight,
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                    borderRadius:
-                        BorderRadius.circular(
-                      22,
-                    ),
+                    borderRadius: BorderRadius.circular(22),
                   ),
                   child: Row(
                     children: [
                       Container(
                         width: 58,
                         height: 58,
-                        decoration:
-                            BoxDecoration(
-                          color: Colors.white
-                              .withValues(
-                            alpha: 0.16,
-                          ),
-                          shape:
-                              BoxShape.circle,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.16),
+                          shape: BoxShape.circle,
                         ),
                         child: const Icon(
-                          Icons
-                              .person_add_alt_1,
-                          color:
-                              Colors.white,
+                          Icons.person_add_alt_1,
+                          color: Colors.white,
                           size: 28,
                         ),
                       ),
-                      const SizedBox(
-                        width: 15,
-                      ),
+                      const SizedBox(width: 15),
                       const Expanded(
                         child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment
-                                  .start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               'New Customer',
-                              style:
-                                  TextStyle(
-                                color:
-                                    Colors.white,
+                              style: TextStyle(
+                                color: Colors.white,
                                 fontSize: 22,
-                                fontWeight:
-                                    FontWeight
-                                        .w800,
+                                fontWeight: FontWeight.w800,
                               ),
                             ),
-                            SizedBox(
-                              height: 5,
-                            ),
+                            SizedBox(height: 5),
                             Text(
                               'Create a customer account and set their current balance.',
-                              style:
-                                  TextStyle(
-                                color:
-                                    Colors.white70,
+                              style: TextStyle(
+                                color: Colors.white70,
                                 fontSize: 13,
                               ),
                             ),
@@ -292,11 +209,7 @@ class _AddCustomerScreenState
 
                 const Text(
                   'Customer Information',
-                  style: TextStyle(
-                    fontSize: 19,
-                    fontWeight:
-                        FontWeight.w800,
-                  ),
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
                 ),
 
                 const SizedBox(height: 6),
@@ -305,48 +218,38 @@ class _AddCustomerScreenState
                   'Enter the basic details of the business.',
                   style: TextStyle(
                     fontSize: 13,
-                    color: colorScheme
-                        .onSurfaceVariant,
+                    color: colorScheme.onSurfaceVariant,
                   ),
                 ),
 
                 const SizedBox(height: 18),
 
                 _FormField(
-                  controller:
-                      businessNameController,
+                  controller: businessNameController,
                   label: 'Business Name',
                   hint: 'e.g. ABC Traders',
-                  icon:
-                      Icons.storefront_outlined,
-                  textCapitalization:
-                      TextCapitalization.words,
+                  icon: Icons.storefront_outlined,
+                  textCapitalization: TextCapitalization.words,
                 ),
 
                 const SizedBox(height: 14),
 
                 _FormField(
-                  controller:
-                      locationController,
+                  controller: locationController,
                   label: 'Location',
                   hint: 'e.g. Kuttikanam',
-                  icon:
-                      Icons.location_on_outlined,
-                  textCapitalization:
-                      TextCapitalization.words,
+                  icon: Icons.location_on_outlined,
+                  textCapitalization: TextCapitalization.words,
                 ),
 
                 const SizedBox(height: 14),
 
                 _FormField(
-                  controller:
-                      phoneController,
+                  controller: phoneController,
                   label: 'Phone Number',
                   hint: 'e.g. 9876543210',
-                  icon:
-                      Icons.phone_outlined,
-                  keyboardType:
-                      TextInputType.phone,
+                  icon: Icons.phone_outlined,
+                  keyboardType: TextInputType.phone,
                   maxLength: 10,
                 ),
 
@@ -354,11 +257,7 @@ class _AddCustomerScreenState
 
                 const Text(
                   'Account Information',
-                  style: TextStyle(
-                    fontSize: 19,
-                    fontWeight:
-                        FontWeight.w800,
-                  ),
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
                 ),
 
                 const SizedBox(height: 6),
@@ -367,23 +266,18 @@ class _AddCustomerScreenState
                   'Set the amount currently owed by the customer.',
                   style: TextStyle(
                     fontSize: 13,
-                    color: colorScheme
-                        .onSurfaceVariant,
+                    color: colorScheme.onSurfaceVariant,
                   ),
                 ),
 
                 const SizedBox(height: 18),
 
                 _FormField(
-                  controller:
-                      openingBalanceController,
+                  controller: openingBalanceController,
                   label: 'Opening Balance',
                   hint: 'e.g. 5000',
-                  icon: Icons
-                      .account_balance_wallet_outlined,
-                  keyboardType:
-                      const TextInputType
-                          .numberWithOptions(
+                  icon: Icons.account_balance_wallet_outlined,
+                  keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
                   prefixText: '₹ ',
@@ -392,46 +286,27 @@ class _AddCustomerScreenState
                 const SizedBox(height: 10),
 
                 Container(
-                  padding:
-                      const EdgeInsets.all(
-                    13,
-                  ),
-                  decoration:
-                      BoxDecoration(
-                    color: colorScheme
-                        .primary
-                        .withValues(
-                      alpha: 0.06,
-                    ),
-                    borderRadius:
-                        BorderRadius.circular(
-                      12,
-                    ),
+                  padding: const EdgeInsets.all(13),
+                  decoration: BoxDecoration(
+                    color: colorScheme.primary.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
-                    crossAxisAlignment:
-                        CrossAxisAlignment
-                            .start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Icon(
-                        Icons
-                            .info_outline_rounded,
+                        Icons.info_outline_rounded,
                         size: 18,
-                        color: colorScheme
-                            .primary,
+                        color: colorScheme.primary,
                       ),
-                      const SizedBox(
-                        width: 9,
-                      ),
+                      const SizedBox(width: 9),
                       Expanded(
                         child: Text(
                           'Opening balance is the amount the customer already owes before any new payments or purchases are recorded.',
-                          style:
-                              TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
                             height: 1.4,
-                            color: colorScheme
-                                .onSurfaceVariant,
+                            color: colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ),
@@ -445,33 +320,22 @@ class _AddCustomerScreenState
                   width: double.infinity,
                   height: 56,
                   child: FilledButton.icon(
-                    onPressed: isSaving
-                        ? null
-                        : saveCustomer,
+                    onPressed: isSaving ? null : saveCustomer,
                     icon: isSaving
                         ? const SizedBox(
                             width: 20,
                             height: 20,
-                            child:
-                                CircularProgressIndicator(
+                            child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color:
-                                  Colors.white,
+                              color: Colors.white,
                             ),
                           )
-                        : const Icon(
-                            Icons
-                                .check_circle_outline,
-                          ),
+                        : const Icon(Icons.check_circle_outline),
                     label: Text(
-                      isSaving
-                          ? 'Saving Customer...'
-                          : 'Create Customer',
-                      style:
-                          const TextStyle(
+                      isSaving ? 'Saving Customer...' : 'Create Customer',
+                      style: const TextStyle(
                         fontSize: 16,
-                        fontWeight:
-                            FontWeight.w700,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
@@ -482,12 +346,10 @@ class _AddCustomerScreenState
                 Center(
                   child: Text(
                     'Customer information is securely saved to your business database.',
-                    textAlign:
-                        TextAlign.center,
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 11,
-                      color: colorScheme
-                          .onSurfaceVariant,
+                      color: colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ),
@@ -500,15 +362,13 @@ class _AddCustomerScreenState
   }
 }
 
-class _FormField
-    extends StatelessWidget {
+class _FormField extends StatelessWidget {
   final TextEditingController controller;
   final String label;
   final String hint;
   final IconData icon;
   final TextInputType? keyboardType;
-  final TextCapitalization
-      textCapitalization;
+  final TextCapitalization textCapitalization;
   final int? maxLength;
   final String? prefixText;
 
@@ -518,22 +378,19 @@ class _FormField
     required this.hint,
     required this.icon,
     this.keyboardType,
-    this.textCapitalization =
-        TextCapitalization.none,
+    this.textCapitalization = TextCapitalization.none,
     this.maxLength,
     this.prefixText,
   });
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme =
-        Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
-      textCapitalization:
-          textCapitalization,
+      textCapitalization: textCapitalization,
       maxLength: maxLength,
       decoration: InputDecoration(
         labelText: label,
@@ -541,34 +398,21 @@ class _FormField
         prefixIcon: Icon(icon),
         prefixText: prefixText,
         filled: true,
-        fillColor: colorScheme
-            .surfaceContainerHighest,
-        counterText:
-            maxLength != null ? null : '',
+        fillColor: colorScheme.surfaceContainerHighest,
+        counterText: maxLength != null ? null : '',
         border: OutlineInputBorder(
-          borderRadius:
-              BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide.none,
         ),
-        enabledBorder:
-            OutlineInputBorder(
-          borderRadius:
-              BorderRadius.circular(16),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(
-            color: colorScheme.outline
-                .withValues(
-              alpha: 0.08,
-            ),
+            color: colorScheme.outline.withValues(alpha: 0.08),
           ),
         ),
-        focusedBorder:
-            OutlineInputBorder(
-          borderRadius:
-              BorderRadius.circular(16),
-          borderSide: BorderSide(
-            color: colorScheme.primary,
-            width: 2,
-          ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: colorScheme.primary, width: 2),
         ),
       ),
     );

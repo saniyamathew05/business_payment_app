@@ -1,2323 +1,1034 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
-
-
-import '../customers/add_customer_screen.dart';
-
 import '../../models/customer.dart';
-
+import '../../models/transaction.dart';
 import '../../services/customer_service.dart';
-
+import '../../services/salesman_visit_service.dart';
 import '../../services/transaction_service.dart';
 
-
-
+/// Owner overview built around the supplied LedgerPro desktop reference.
+/// All financial/customer figures are read from the existing services.
 class OwnerDashboard extends StatefulWidget {
-
   const OwnerDashboard({
-
     super.key,
-
+    this.onOpenPayments,
+    this.onOpenCustomers,
+    this.onOpenVisitAudit,
+    this.userName = 'Owner',
   });
 
-
+  final String userName;
+  final VoidCallback? onOpenPayments;
+  final VoidCallback? onOpenCustomers;
+  final VoidCallback? onOpenVisitAudit;
 
   @override
-
-  State<OwnerDashboard> createState() =>
-
-      _OwnerDashboardState();
-
+  State<OwnerDashboard> createState() => _OwnerDashboardState();
 }
 
+class _OwnerDashboardState extends State<OwnerDashboard> {
+  String _period = 'Today';
+  bool _refreshing = false;
+  Map<String, String> _visitStatuses = const {};
+  List<String> _todayRoute = const [];
+  String? _visitLoadError;
 
-
-class _OwnerDashboardState
-
-    extends State<OwnerDashboard> {
+  static const _ink = Color(0xFF151735);
+  static const _navy = Color(0xFF17163F);
+  static const _purple = Color(0xFF6846F5);
+  static const _purpleLight = Color(0xFF9A8BFF);
+  static const _line = Color(0xFFE8EAF5);
+  static const _muted = Color(0xFF7A819A);
+  static const _green = Color(0xFF159B68);
+  static const _red = Color(0xFFD92D36);
+  static const _orange = Color(0xFFEA8A26);
+  static const _blue = Color(0xFF347BEA);
 
   @override
-
   void initState() {
-
     super.initState();
-
-
-
-    TransactionService.dataVersion.addListener(
-
-      _refresh,
-
-    );
-
-
-
-    CustomerService.dataVersion.addListener(
-
-      _refresh,
-
-    );
-
+    CustomerService.dataVersion.addListener(_refresh);
+    TransactionService.dataVersion.addListener(_refresh);
+    _load();
   }
 
-
+  @override
+  void dispose() {
+    CustomerService.dataVersion.removeListener(_refresh);
+    TransactionService.dataVersion.removeListener(_refresh);
+    super.dispose();
+  }
 
   void _refresh() {
-
-    if (mounted) {
-
-      setState(() {});
-
-    }
-
+    if (mounted) setState(() {});
   }
 
-
-
-  @override
-
-  void dispose() {
-
-    TransactionService.dataVersion.removeListener(
-
-      _refresh,
-
-    );
-
-
-
-    CustomerService.dataVersion.removeListener(
-
-      _refresh,
-
-    );
-
-
-
-    super.dispose();
-
-  }
-
-
-
-  Future<void> addCustomer() async {
-
-    final newCustomer =
-
-        await Navigator.push<Customer>(
-
-      context,
-
-      MaterialPageRoute(
-
-        builder: (context) =>
-
-            const AddCustomerScreen(),
-
-      ),
-
-    );
-
-
-
-    if (newCustomer != null) {
-
+  Future<void> _load() async {
+    if (_refreshing) return;
+    setState(() => _refreshing = true);
+    try {
+      await CustomerService.loadCustomers();
+      await TransactionService.loadCustomerBalances();
+      await TransactionService.loadTransactions();
       try {
-
-        await CustomerService.addCustomer(
-
-          businessName: newCustomer.businessName,
-
-          location: newCustomer.location,
-
-          phone: newCustomer.phone,
-
-          openingBalance: newCustomer.openingBalance,
-
-        );
-
-
-
-        if (!mounted) return;
-
-
-
-        ScaffoldMessenger.of(context).showSnackBar(
-
-          const SnackBar(
-
-            content: Text(
-
-              'Customer added successfully.',
-
-            ),
-
-          ),
-
-        );
-
+        final results = await Future.wait<dynamic>([
+          SalesmanVisitService.loadTodayStatuses(),
+          SalesmanVisitService.loadTodayRoute(),
+        ]);
+        _visitStatuses = results[0] as Map<String, String>;
+        _todayRoute = results[1] as List<String>;
+        _visitLoadError = null;
       } catch (error) {
-
-        if (!mounted) return;
-
-
-
-        ScaffoldMessenger.of(context).showSnackBar(
-
-          SnackBar(
-
-            content: Text(
-
-              'Could not add customer: $error',
-
-            ),
-
-          ),
-
-        );
-
+        // A missing optional visit table must not prevent the financial dashboard
+        // from loading. Do not substitute sample visit data.
+        _visitLoadError = error.toString();
+        _visitStatuses = const {};
+        _todayRoute = const [];
       }
-
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
     }
-
   }
 
-
-
-  String _formatCurrency(
-
-    double amount,
-
-  ) {
-
-    return '₹${amount.toStringAsFixed(2)}';
-
+  String _money(num value, {bool decimals = false}) {
+    final amount = value.abs();
+    final whole = amount.toInt().toString();
+    final formatted = whole.replaceAllMapped(
+      RegExp(r'\B(?=(\d{3})+(?!\d))'),
+      (_) => ',',
+    );
+    final suffix = decimals
+        ? '.${(amount % 1 * 100).round().toString().padLeft(2, '0')}'
+        : '';
+    return '${value < 0 ? '- ' : ''}₹ $formatted$suffix';
   }
 
-
-
-  String _formatCompactCurrency(
-
-    double amount,
-
-  ) {
-
-    if (amount >= 10000000) {
-
-      return '₹${(amount / 10000000).toStringAsFixed(1)}Cr';
-
-    }
-
-
-
-    if (amount >= 100000) {
-
-      return '₹${(amount / 100000).toStringAsFixed(1)}L';
-
-    }
-
-
-
-    if (amount >= 1000) {
-
-      return '₹${(amount / 1000).toStringAsFixed(1)}K';
-
-    }
-
-
-
-    return '₹${amount.toStringAsFixed(0)}';
-
-  }
-
-
-
-  String _getGreeting() {
-
+  String _greeting() {
     final hour = DateTime.now().hour;
-
-
-
-    if (hour < 12) {
-
-      return 'Good morning';
-
-    }
-
-
-
-    if (hour < 17) {
-
-      return 'Good afternoon';
-
-    }
-
-
-
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
     return 'Good evening';
-
   }
 
+  bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
 
+  List<PaymentTransaction> get _transactions => TransactionService.transactions;
+
+  double get _receivedToday => TransactionService.getCollectedToday();
+
+  double get _pendingToday {
+    final now = DateTime.now();
+    // Purchases/sales are stored in the same ledger table in some installations;
+    // use only transactions whose remaining balance increased today as pending
+    // activity. If the schema doesn't distinguish types, the value safely falls
+    // back to the sum of positive remaining-balance changes.
+    return _transactions
+        .where((t) => _sameDay(t.transactionDate, now))
+        .fold<double>(
+          0,
+          (sum, t) =>
+              sum +
+              math.max(0, t.remainingBalance - t.previousBalance).toDouble(),
+        );
+  }
+
+  int get _locationCount => CustomerService.customers
+      .map((c) => c.location.trim().toLowerCase())
+      .where((location) => location.isNotEmpty)
+      .toSet()
+      .length;
+
+  Map<String, double> _locationDues(List<Customer> customers) {
+    final totals = <String, double>{};
+    for (final customer in customers) {
+      final name = customer.location.trim().isEmpty
+          ? 'Unassigned'
+          : customer.location.trim();
+      totals[name] =
+          (totals[name] ?? 0) +
+          TransactionService.getCustomerBalance(customer.id);
+    }
+    return Map.fromEntries(
+      totals.entries.where((e) => e.value > 0).toList()
+        ..sort((a, b) => b.value.compareTo(a.value)),
+    );
+  }
+
+  List<_DayTotals> _chartDays() {
+    final now = DateTime.now();
+    final count = _period == 'Today' ? 7 : (_period == 'This week' ? 7 : 7);
+    final start = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).subtract(Duration(days: count - 1));
+    final result = <_DayTotals>[];
+    for (var i = 0; i < count; i++) {
+      final day = start.add(Duration(days: i));
+      final daily = _transactions
+          .where((t) => _sameDay(t.transactionDate, day))
+          .toList();
+      final received = daily.fold<double>(
+        0,
+        (sum, t) => sum + t.amountReceived,
+      );
+      // For each customer, take only their last balance recorded on this day.
+      final latestByCustomer = <String, PaymentTransaction>{};
+      for (final t in daily) {
+        final previous = latestByCustomer[t.customerId];
+        if (previous == null ||
+            t.transactionDate.isAfter(previous.transactionDate)) {
+          latestByCustomer[t.customerId] = t;
+        }
+      }
+      final pending = latestByCustomer.values.fold<double>(
+        0,
+        (sum, t) => sum + math.max(0, t.remainingBalance).toDouble(),
+      );
+      result.add(_DayTotals(day, received, pending));
+    }
+    return result;
+  }
 
   @override
-
-  Widget build(
-
-    BuildContext context,
-
-  ) {
-
-    final theme =
-
-        Theme.of(context);
-
-
-
-    final colors =
-
-        theme.colorScheme;
-
-
-
-    final isDark =
-
-        theme.brightness ==
-
-            Brightness.dark;
-
-
-
-    final customers =
-
-        CustomerService.customers;
-
-
-
-    final customerCount =
-
-        customers.length;
-
-
-
-    final moneyToReceive =
-
-        TransactionService
-
-            .getTotalMoneyToReceive(
-
-      customers,
-
-    );
-
-
-
-    final collectedToday =
-
-        TransactionService
-
-            .getCollectedToday();
-
-
-
-    final paymentsToday =
-
-        TransactionService
-
-            .getPaymentsToday();
-
-
-
-    final totalTransactions =
-
-        TransactionService
-
-            .transactions
-
-            .length;
-
-
-
-    return Scaffold(
-
-      backgroundColor:
-
-          colors.surfaceContainerLowest,
-
-      body: SafeArea(
-
-        child: RefreshIndicator(
-
-          color: colors.primary,
-
-          backgroundColor:
-
-              colors.surface,
-
-          onRefresh: () async {
-
-            await CustomerService
-
-                .loadCustomers();
-
-
-
-            await TransactionService
-
-                .loadTransactions();
-
-          },
-
-          child:
-
-              SingleChildScrollView(
-
-            physics:
-
-                const AlwaysScrollableScrollPhysics(),
-
-            padding:
-
-                const EdgeInsets.fromLTRB(
-
-              20,
-
-              20,
-
-              20,
-
-              36,
-
-            ),
-
-            child: Column(
-
-              crossAxisAlignment:
-
-                  CrossAxisAlignment.start,
-
-              children: [
-
-                // ==================================================
-
-                // HEADER
-
-                // ==================================================
-
-
-
-                Row(
-
-                  children: [
-
-                    Expanded(
-
-                      child: Column(
-
-                        crossAxisAlignment:
-
-                            CrossAxisAlignment.start,
-
-                        children: [
-
-                          Text(
-
-                            _getGreeting(),
-
-                            style: TextStyle(
-
-                              fontSize: 13,
-
-                              fontWeight:
-
-                                  FontWeight.w600,
-
-                              color: colors
-
-                                  .onSurfaceVariant,
-
-                            ),
-
-                          ),
-
-                          const SizedBox(
-
-                            height: 5,
-
-                          ),
-
-                          Text(
-
-                            'Owner Dashboard',
-
-                            style: TextStyle(
-
-                              fontSize: 27,
-
-                              fontWeight:
-
-                                  FontWeight.w800,
-
-                              letterSpacing:
-
-                                  -0.7,
-
-                              color: colors
-
-                                  .onSurface,
-
-                            ),
-
-                          ),
-
-                          const SizedBox(
-
-                            height: 4,
-
-                          ),
-
-                          Text(
-
-                            'Your business at a glance.',
-
-                            style: TextStyle(
-
-                              fontSize: 13,
-
-                              color: colors
-
-                                  .onSurfaceVariant,
-
-                            ),
-
-                          ),
-
-                        ],
-
-                      ),
-
-                    ),
-
-
-
-                    // Profile-style business icon
-
-                    Container(
-
-                      width: 46,
-
-                      height: 46,
-
-                      decoration:
-
-                          BoxDecoration(
-
-                        color: colors
-
-                            .primaryContainer,
-
-                        borderRadius:
-
-                            BorderRadius
-
-                                .circular(
-
-                          14,
-
-                        ),
-
-                      ),
-
-                      child: Icon(
-
-                        Icons
-
-                            .storefront_rounded,
-
-                        color: colors
-
-                            .onPrimaryContainer,
-
-                        size: 22,
-
-                      ),
-
-                    ),
-
-                  ],
-
-                ),
-
-
-
-                const SizedBox(
-
-                  height: 24,
-
-                ),
-
-
-
-                // ==================================================
-
-                // OUTSTANDING BALANCE CARD
-
-                // ==================================================
-
-
-
-                Container(
-
-                  width:
-
-                      double.infinity,
-
-                  padding:
-
-                      const EdgeInsets.all(
-
-                    22,
-
-                  ),
-
-                  decoration:
-
-                      BoxDecoration(
-
-                    gradient:
-
-                        LinearGradient(
-
-                      begin:
-
-                          Alignment.topLeft,
-
-                      end:
-
-                          Alignment.bottomRight,
-
-                      colors: [
-
-                        colors.primary,
-
-                        isDark
-
-                            ? const Color(
-
-                                0xFF0F766E,
-
-                              )
-
-                            : const Color(
-
-                                0xFF115E59,
-
-                              ),
-
-                      ],
-
-                    ),
-
-                    borderRadius:
-
-                        BorderRadius.circular(
-
-                      22,
-
-                    ),
-
-                    boxShadow: [
-
-                      BoxShadow(
-
-                        color: colors
-
-                            .primary
-
-                            .withValues(alpha: 
-
-                          isDark
-
-                              ? 0.16
-
-                              : 0.18,
-
-                        ),
-
-                        blurRadius: 24,
-
-                        offset:
-
-                            const Offset(
-
-                          0,
-
-                          10,
-
-                        ),
-
-                      ),
-
-                    ],
-
-                  ),
-
-                  child: Column(
-
-                    crossAxisAlignment:
-
-                        CrossAxisAlignment
-
-                            .start,
-
-                    children: [
-
-                      Row(
-
-                        children: [
-
-                          Container(
-
-                            width: 42,
-
-                            height: 42,
-
-                            decoration:
-
-                                BoxDecoration(
-
-                              color: Colors
-
-                                  .white
-
-                                  .withValues(alpha: 
-
-                                0.14,
-
-                              ),
-
-                              borderRadius:
-
-                                  BorderRadius
-
-                                      .circular(
-
-                                12,
-
-                              ),
-
-                            ),
-
-                            child:
-
-                                const Icon(
-
-                              Icons
-
-                                  .account_balance_wallet_outlined,
-
-                              color:
-
-                                  Colors.white,
-
-                              size: 21,
-
-                            ),
-
-                          ),
-
-                          const SizedBox(
-
-                            width: 12,
-
-                          ),
-
-                          const Expanded(
-
-                            child: Column(
-
-                              crossAxisAlignment:
-
-                                  CrossAxisAlignment
-
-                                      .start,
-
-                              children: [
-
-                                Text(
-
-                                  'Total Outstanding',
-
-                                  style:
-
-                                      TextStyle(
-
-                                    color:
-
-                                        Colors.white,
-
-                                    fontSize: 14,
-
-                                    fontWeight:
-
-                                        FontWeight.w600,
-
-                                  ),
-
-                                ),
-
-                                SizedBox(
-
-                                  height: 2,
-
-                                ),
-
-                                Text(
-
-                                  'Amount to be collected',
-
-                                  style:
-
-                                      TextStyle(
-
-                                    color:
-
-                                        Color(
-
-                                      0xBFFFFFFF,
-
-                                    ),
-
-                                    fontSize: 11,
-
-                                  ),
-
-                                ),
-
-                              ],
-
-                            ),
-
-                          ),
-
-                        ],
-
-                      ),
-
-                      const SizedBox(
-
-                        height: 22,
-
-                      ),
-
-                      Text(
-
-                        _formatCurrency(
-
-                          moneyToReceive,
-
-                        ),
-
-                        style:
-
-                            const TextStyle(
-
-                          color:
-
-                              Colors.white,
-
-                          fontSize: 34,
-
-                          fontWeight:
-
-                              FontWeight.w800,
-
-                          letterSpacing:
-
-                              -1.1,
-
-                        ),
-
-                      ),
-
-                      const SizedBox(
-
-                        height: 16,
-
-                      ),
-
-                      Container(
-
-                        height: 1,
-
-                        color: Colors
-
-                            .white
-
-                            .withValues(alpha: 
-
-                          0.14,
-
-                        ),
-
-                      ),
-
-                      const SizedBox(
-
-                        height: 14,
-
-                      ),
-
-                      Row(
-
-                        children: [
-
-                          Icon(
-
-                            Icons
-
-                                .people_outline_rounded,
-
-                            size: 16,
-
-                            color: Colors
-
-                                .white
-
-                                .withValues(alpha: 
-
-                              0.85,
-
-                            ),
-
-                          ),
-
-                          const SizedBox(
-
-                            width: 7,
-
-                          ),
-
-                          Text(
-
-                            '$customerCount ${customerCount == 1 ? 'customer' : 'customers'}',
-
-                            style:
-
-                                TextStyle(
-
-                              color: Colors
-
-                                  .white
-
-                                  .withValues(alpha: 
-
-                                0.88,
-
-                              ),
-
-                              fontSize: 12,
-
-                              fontWeight:
-
-                                  FontWeight.w600,
-
-                            ),
-
-                          ),
-
-                        ],
-
-                      ),
-
-                    ],
-
-                  ),
-
-                ),
-
-
-
-                const SizedBox(
-
-                  height: 18,
-
-                ),
-
-
-
-                // ==================================================
-
-                // KPI SECTION
-
-                // ==================================================
-
-
-
-                Row(
-
-                  children: [
-
-                    Expanded(
-
-                      child:
-
-                          _MetricCard(
-
-                        icon: Icons
-
-                            .payments_outlined,
-
-                        title:
-
-                            'Collected Today',
-
-                        value:
-
-                            _formatCompactCurrency(
-
-                          collectedToday,
-
-                        ),
-
-                        colors:
-
-                            colors,
-
-                      ),
-
-                    ),
-
-                    const SizedBox(
-
-                      width: 12,
-
-                    ),
-
-                    Expanded(
-
-                      child:
-
-                          _MetricCard(
-
-                        icon: Icons
-
-                            .receipt_long_outlined,
-
-                        title:
-
-                            'Payments Today',
-
-                        value:
-
-                            '$paymentsToday',
-
-                        colors:
-
-                            colors,
-
-                      ),
-
-                    ),
-
-                  ],
-
-                ),
-
-
-
-                const SizedBox(
-
-                  height: 12,
-
-                ),
-
-
-
-                Row(
-
-                  children: [
-
-                    Expanded(
-
-                      child:
-
-                          _MetricCard(
-
-                        icon: Icons
-
-                            .people_outline_rounded,
-
-                        title:
-
-                            'Customers',
-
-                        value:
-
-                            '$customerCount',
-
-                        colors:
-
-                            colors,
-
-                      ),
-
-                    ),
-
-                    const SizedBox(
-
-                      width: 12,
-
-                    ),
-
-                    Expanded(
-
-                      child:
-
-                          _MetricCard(
-
-                        icon: Icons
-
-                            .history_rounded,
-
-                        title:
-
-                            'Transactions',
-
-                        value:
-
-                            '$totalTransactions',
-
-                        colors:
-
-                            colors,
-
-                      ),
-
-                    ),
-
-                  ],
-
-                ),
-
-
-
-                const SizedBox(
-
-                  height: 30,
-
-                ),
-
-
-
-                // ==================================================
-
-                // QUICK ACTION
-
-                // ==================================================
-
-
-
-                _SectionTitle(
-
-                  title: 'Quick Action',
-
-                  colors: colors,
-
-                ),
-
-
-
-                const SizedBox(
-
-                  height: 12,
-
-                ),
-
-
-
-                Material(
-
-                  color:
-
-                      colors.surface,
-
-                  borderRadius:
-
-                      BorderRadius.circular(
-
-                    18,
-
-                  ),
-
-                  child: InkWell(
-
-                    onTap:
-
-                        addCustomer,
-
-                    borderRadius:
-
-                        BorderRadius.circular(
-
-                      18,
-
-                    ),
-
-                    child:
-
-                        Container(
-
-                      padding:
-
-                          const EdgeInsets.all(
-
-                        17,
-
-                      ),
-
-                      decoration:
-
-                          BoxDecoration(
-
-                        borderRadius:
-
-                            BorderRadius
-
-                                .circular(
-
-                          18,
-
-                        ),
-
-                        border:
-
-                            Border.all(
-
-                          color: colors
-
-                              .outlineVariant,
-
-                        ),
-
-                      ),
-
-                      child: Row(
-
-                        children: [
-
-                          Container(
-
-                            width: 48,
-
-                            height: 48,
-
-                            decoration:
-
-                                BoxDecoration(
-
-                              color: colors
-
-                                  .primaryContainer,
-
-                              borderRadius:
-
-                                  BorderRadius
-
-                                      .circular(
-
-                                13,
-
-                              ),
-
-                            ),
-
-                            child:
-
-                                Icon(
-
-                              Icons
-
-                                  .person_add_alt_1_rounded,
-
-                              color: colors
-
-                                  .onPrimaryContainer,
-
-                              size: 21,
-
-                            ),
-
-                          ),
-
-                          const SizedBox(
-
-                            width: 13,
-
-                          ),
-
-                          Expanded(
-
-                            child:
-
-                                Column(
-
-                              crossAxisAlignment:
-
-                                  CrossAxisAlignment
-
-                                      .start,
-
-                              children: [
-
-                                Text(
-
-                                  'Add Customer',
-
-                                  style:
-
-                                      TextStyle(
-
-                                    color:
-
-                                        colors.onSurface,
-
-                                    fontSize:
-
-                                        14,
-
-                                    fontWeight:
-
-                                        FontWeight.w700,
-
-                                  ),
-
-                                ),
-
-                                const SizedBox(
-
-                                  height: 3,
-
-                                ),
-
-                                Text(
-
-                                  'Create a new customer account',
-
-                                  style:
-
-                                      TextStyle(
-
-                                    color:
-
-                                        colors.onSurfaceVariant,
-
-                                    fontSize:
-
-                                        12,
-
-                                  ),
-
-                                ),
-
-                              ],
-
-                            ),
-
-                          ),
-
-                          Icon(
-
-                            Icons
-
-                                .arrow_forward_ios_rounded,
-
-                            size: 15,
-
-                            color: colors
-
-                                .onSurfaceVariant,
-
-                          ),
-
-                        ],
-
-                      ),
-
-                    ),
-
-                  ),
-
-                ),
-
-
-
-                const SizedBox(
-
-                  height: 30,
-
-                ),
-
-
-
-                // ==================================================
-
-                // BUSINESS OVERVIEW
-
-                // ==================================================
-
-
-
-                _SectionTitle(
-
-                  title:
-
-                      'Business Overview',
-
-                  colors: colors,
-
-                ),
-
-
-
-                const SizedBox(
-
-                  height: 12,
-
-                ),
-
-
-
-                Container(
-
-                  width:
-
-                      double.infinity,
-
-                  padding:
-
-                      const EdgeInsets.all(
-
-                    19,
-
-                  ),
-
-                  decoration:
-
-                      BoxDecoration(
-
-                    color:
-
-                        colors.surface,
-
-                    borderRadius:
-
-                        BorderRadius.circular(
-
-                      18,
-
-                    ),
-
-                    border:
-
-                        Border.all(
-
-                      color: colors
-
-                          .outlineVariant,
-
-                    ),
-
-                  ),
-
-                  child: Column(
-
-                    children: [
-
-                      _OverviewRow(
-
-                        icon: Icons
-
-                            .account_balance_wallet_outlined,
-
-                        title:
-
-                            'Outstanding balance',
-
-                        value:
-
-                            _formatCurrency(
-
-                          moneyToReceive,
-
-                        ),
-
-                        valueColor:
-
-                            moneyToReceive >
-
-                                    0
-
-                                ? colors
-
-                                    .error
-
-                                : colors
-
-                                    .primary,
-
-                        colors:
-
-                            colors,
-
-                      ),
-
-                      _OverviewDivider(
-
-                        colors:
-
-                            colors,
-
-                      ),
-
-                      _OverviewRow(
-
-                        icon: Icons
-
-                            .payments_outlined,
-
-                        title:
-
-                            'Collected today',
-
-                        value:
-
-                            _formatCurrency(
-
-                          collectedToday,
-
-                        ),
-
-                        valueColor:
-
-                            colors.primary,
-
-                        colors:
-
-                            colors,
-
-                      ),
-
-                      _OverviewDivider(
-
-                        colors:
-
-                            colors,
-
-                      ),
-
-                      _OverviewRow(
-
-                        icon: Icons
-
-                            .storefront_outlined,
-
-                        title:
-
-                            'Registered customers',
-
-                        value:
-
-                            '$customerCount',
-
-                        colors:
-
-                            colors,
-
-                      ),
-
-                      _OverviewDivider(
-
-                        colors:
-
-                            colors,
-
-                      ),
-
-                      _OverviewRow(
-
-                        icon: Icons
-
-                            .receipt_long_outlined,
-
-                        title:
-
-                            'Payments today',
-
-                        value:
-
-                            '$paymentsToday',
-
-                        colors:
-
-                            colors,
-
-                      ),
-
-                    ],
-
-                  ),
-
-                ),
-
-
-
-                const SizedBox(
-
-                  height: 30,
-
-                ),
-
-
-
-                // ==================================================
-
-                // TODAY'S COLLECTION
-
-                // ==================================================
-
-
-
-                _SectionTitle(
-
-                  title:
-
-                      "Today's Collection",
-
-                  colors: colors,
-
-                ),
-
-
-
-                const SizedBox(
-
-                  height: 12,
-
-                ),
-
-
-
-                Container(
-
-                  width:
-
-                      double.infinity,
-
-                  padding:
-
-                      const EdgeInsets.all(
-
-                    19,
-
-                  ),
-
-                  decoration:
-
-                      BoxDecoration(
-
-                    color:
-
-                        colors.surface,
-
-                    borderRadius:
-
-                        BorderRadius.circular(
-
-                      18,
-
-                    ),
-
-                    border:
-
-                        Border.all(
-
-                      color: colors
-
-                          .outlineVariant,
-
-                    ),
-
-                  ),
-
-                  child: Row(
-
-                    children: [
-
-                      Container(
-
-                        width: 48,
-
-                        height: 48,
-
-                        decoration:
-
-                            BoxDecoration(
-
-                          color: colors
-
-                              .primaryContainer,
-
-                          borderRadius:
-
-                              BorderRadius.circular(
-
-                            14,
-
-                          ),
-
-                        ),
-
-                        child: Icon(
-
-                          Icons
-
-                              .trending_up_rounded,
-
-                          color: colors
-
-                              .onPrimaryContainer,
-
-                          size: 22,
-
-                        ),
-
-                      ),
-
-                      const SizedBox(
-
-                        width: 13,
-
-                      ),
-
-                      Expanded(
-
-                        child: Column(
-
-                          crossAxisAlignment:
-
-                              CrossAxisAlignment
-
-                                  .start,
-
-                          children: [
-
-                            Text(
-
-                              'Payment Collection',
-
-                              style:
-
-                                  TextStyle(
-
-                                color: colors
-
-                                    .onSurface,
-
-                                fontSize: 14,
-
-                                fontWeight:
-
-                                    FontWeight.w700,
-
-                              ),
-
-                            ),
-
-                            const SizedBox(
-
-                              height: 3,
-
-                            ),
-
-                            Text(
-
-                              'Total received today',
-
-                              style:
-
-                                  TextStyle(
-
-                                color: colors
-
-                                    .onSurfaceVariant,
-
-                                fontSize: 12,
-
-                              ),
-
-                            ),
-
-                          ],
-
-                        ),
-
-                      ),
-
-                      Text(
-
-                        _formatCurrency(
-
-                          collectedToday,
-
-                        ),
-
-                        style:
-
-                            TextStyle(
-
-                          color:
-
-                              colors.primary,
-
-                          fontSize: 17,
-
-                          fontWeight:
-
-                              FontWeight.w800,
-
-                        ),
-
-                      ),
-
-                    ],
-
-                  ),
-
-                ),
-
-
-
-                const SizedBox(
-
-                  height: 30,
-
-                ),
-
-
-
-                // ==================================================
-
-                // FOOTER
-
-                // ==================================================
-
-
-
-                Center(
-
-                  child: Text(
-
-                    'Business Payment',
-
-                    style: TextStyle(
-
-                      color: colors
-
-                          .onSurfaceVariant,
-
-                      fontSize: 11,
-
-                      fontWeight:
-
-                          FontWeight.w500,
-
-                    ),
-
-                  ),
-
-                ),
-
-              ],
-
-            ),
-
+  Widget build(BuildContext context) {
+    final customers = CustomerService.customers;
+    final receivable = TransactionService.getTotalMoneyToReceive(customers);
+    final recentPayments =
+        _transactions.where((t) => t.amountReceived > 0).toList()
+          ..sort((a, b) => b.transactionDate.compareTo(a.transactionDate));
+    final recent = recentPayments.take(5).toList();
+    final locations = _locationDues(customers);
+    final days = _chartDays();
+    final visited = _visitStatuses.length;
+    final routeCustomerCount = customers
+        .where(
+          (c) => _todayRoute.any(
+            (l) => l.toLowerCase() == c.location.toLowerCase(),
           ),
-
-        ),
-
-      ),
-
-    );
-
-  }
-
-}
-
-
-
-// ============================================================
-
-// SECTION TITLE
-
-// ============================================================
-
-
-
-class _SectionTitle
-
-    extends StatelessWidget {
-
-  final String title;
-
-  final ColorScheme colors;
-
-
-
-  const _SectionTitle({
-
-    required this.title,
-
-    required this.colors,
-
-  });
-
-
-
-  @override
-
-  Widget build(
-
-    BuildContext context,
-
-  ) {
-
-    return Text(
-
-      title,
-
-      style: TextStyle(
-
-        color: colors.onSurface,
-
-        fontSize: 18,
-
-        fontWeight: FontWeight.w800,
-
-        letterSpacing: -0.2,
-
-      ),
-
-    );
-
-  }
-
-}
-
-
-
-// ============================================================
-
-// METRIC CARD
-
-// ============================================================
-
-
-
-class _MetricCard
-
-    extends StatelessWidget {
-
-  final IconData icon;
-
-  final String title;
-
-  final String value;
-
-  final ColorScheme colors;
-
-
-
-  const _MetricCard({
-
-    required this.icon,
-
-    required this.title,
-
-    required this.value,
-
-    required this.colors,
-
-  });
-
-
-
-  @override
-
-  Widget build(
-
-    BuildContext context,
-
-  ) {
+        )
+        .length;
+    final planned = math
+        .max(
+          _todayRoute.isNotEmpty ? routeCustomerCount : customers.length,
+          visited,
+        )
+        .toInt();
+    final double progress = planned == 0
+        ? 0.0
+        : (visited / planned).clamp(0.0, 1.0).toDouble();
 
     return Container(
-
-      padding:
-
-          const EdgeInsets.all(16),
-
-      decoration:
-
-          BoxDecoration(
-
-        color: colors.surface,
-
-        borderRadius:
-
-            BorderRadius.circular(
-
-          17,
-
-        ),
-
-        border: Border.all(
-
-          color:
-
-              colors.outlineVariant,
-
-        ),
-
+      color: const Color(0xFFF7F8FE),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final wide = constraints.maxWidth >= 900;
+          final medium = constraints.maxWidth >= 650;
+          final pad = wide ? 24.0 : 16.0;
+          return SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(pad, wide ? 18 : 16, pad, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Dashboard',
+                            style: TextStyle(
+                              color: _ink,
+                              fontSize: wide ? 23 : 21,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -.45,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${_greeting()}, ${widget.userName}! Here’s your business overview.',
+                            style: const TextStyle(
+                              color: Color(0xFF626B89),
+                              fontSize: 11.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      height: 34,
+                      padding: const EdgeInsets.symmetric(horizontal: 9),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: _line),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: _period,
+                          isDense: true,
+                          icon: const Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            size: 16,
+                          ),
+                          style: const TextStyle(color: _ink, fontSize: 11),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'Today',
+                              child: Text('Today'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'This week',
+                              child: Text('This week'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'This month',
+                              child: Text('This month'),
+                            ),
+                          ],
+                          onChanged: (value) {
+                            if (value != null) setState(() => _period = value);
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    IconButton(
+                      tooltip: 'Refresh dashboard',
+                      onPressed: _refreshing ? null : _load,
+                      icon: _refreshing
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(
+                              Icons.notifications_none_rounded,
+                              color: _navy,
+                              size: 21,
+                            ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                GridView.count(
+                  crossAxisCount: wide ? 4 : (medium ? 2 : 2),
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                  childAspectRatio: wide ? 1.82 : (medium ? 2.2 : 1.65),
+                  children: [
+                    _MetricCard(
+                      title: 'Total Receivable',
+                      value: _money(receivable),
+                      foot: 'From ${customers.length} customers',
+                      icon: Icons.account_balance_wallet_outlined,
+                      color: _purple,
+                      bg: const Color(0xFFEDE9FF),
+                    ),
+                    _MetricCard(
+                      title: 'Received Today',
+                      value: _money(_receivedToday),
+                      foot: '${TransactionService.getPaymentsToday()} payments',
+                      icon: Icons.trending_up_rounded,
+                      color: _green,
+                      bg: const Color(0xFFE5F7EF),
+                    ),
+                    _MetricCard(
+                      title: 'Pending Today',
+                      value: _money(_pendingToday),
+                      foot:
+                          '${customers.where((c) => TransactionService.getCustomerBalance(c.id) > 0).length} customers with dues',
+                      icon: Icons.schedule_rounded,
+                      color: _red,
+                      bg: const Color(0xFFFFECEC),
+                    ),
+                    _MetricCard(
+                      title: 'Total Customers',
+                      value: '${customers.length}',
+                      foot: 'Across $_locationCount locations',
+                      icon: Icons.groups_2_outlined,
+                      color: _blue,
+                      bg: const Color(0xFFE8F1FF),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                if (wide)
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        flex: 6,
+                        child: _panel(child: _paymentsChart(days)),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 4,
+                        child: _panel(child: _recentPayments(recent)),
+                      ),
+                    ],
+                  )
+                else ...[
+                  _panel(child: _paymentsChart(days)),
+                  const SizedBox(height: 12),
+                  _panel(child: _recentPayments(recent)),
+                ],
+                const SizedBox(height: 14),
+                if (wide)
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        flex: 6,
+                        child: _panel(
+                          child: _salesmanActivity(visited, planned, progress),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 4,
+                        child: _panel(child: _locationWiseDues(locations)),
+                      ),
+                    ],
+                  )
+                else ...[
+                  _panel(child: _salesmanActivity(visited, planned, progress)),
+                  const SizedBox(height: 12),
+                  _panel(child: _locationWiseDues(locations)),
+                ],
+                if (_visitLoadError != null) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Salesman activity is unavailable until visit tracking is configured.',
+                    style: TextStyle(color: _muted, fontSize: 10),
+                  ),
+                ],
+              ],
+            ),
+          );
+        },
       ),
-
-      child: Column(
-
-        crossAxisAlignment:
-
-            CrossAxisAlignment.start,
-
-        children: [
-
-          Container(
-
-            width: 38,
-
-            height: 38,
-
-            decoration:
-
-                BoxDecoration(
-
-              color:
-
-                  colors.primaryContainer,
-
-              borderRadius:
-
-                  BorderRadius.circular(
-
-                11,
-
-              ),
-
-            ),
-
-            child: Icon(
-
-              icon,
-
-              color:
-
-                  colors.onPrimaryContainer,
-
-              size: 19,
-
-            ),
-
-          ),
-
-          const SizedBox(
-
-            height: 13,
-
-          ),
-
-          Text(
-
-            title,
-
-            maxLines: 1,
-
-            overflow:
-
-                TextOverflow.ellipsis,
-
-            style: TextStyle(
-
-              color: colors
-
-                  .onSurfaceVariant,
-
-              fontSize: 11,
-
-              fontWeight:
-
-                  FontWeight.w500,
-
-            ),
-
-          ),
-
-          const SizedBox(
-
-            height: 4,
-
-          ),
-
-          Text(
-
-            value,
-
-            maxLines: 1,
-
-            overflow:
-
-                TextOverflow.ellipsis,
-
-            style: TextStyle(
-
-              color:
-
-                  colors.onSurface,
-
-              fontSize: 19,
-
-              fontWeight:
-
-                  FontWeight.w800,
-
-              letterSpacing: -0.3,
-
-            ),
-
-          ),
-
-        ],
-
-      ),
-
     );
-
   }
 
-}
+  Widget _panel({required Widget child}) => Container(
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: _line),
+    ),
+    padding: const EdgeInsets.all(14),
+    child: child,
+  );
 
-
-
-// ============================================================
-
-// OVERVIEW ROW
-
-// ============================================================
-
-
-
-class _OverviewRow
-
-    extends StatelessWidget {
-
-  final IconData icon;
-
-  final String title;
-
-  final String value;
-
-  final Color? valueColor;
-
-  final ColorScheme colors;
-
-
-
-  const _OverviewRow({
-
-    required this.icon,
-
-    required this.title,
-
-    required this.value,
-
-    required this.colors,
-
-    this.valueColor,
-
-  });
-
-
-
-  @override
-
-  Widget build(
-
-    BuildContext context,
-
-  ) {
-
-    return Row(
-
-      children: [
-
-        Container(
-
-          width: 36,
-
-          height: 36,
-
-          decoration:
-
-              BoxDecoration(
-
-            color:
-
-                colors.primaryContainer,
-
-            borderRadius:
-
-                BorderRadius.circular(
-
-              10,
-
-            ),
-
+  Widget _panelHeader(
+    String title, {
+    String action = '',
+    VoidCallback? onAction,
+  }) => Row(
+    children: [
+      Expanded(
+        child: Text(
+          title,
+          style: const TextStyle(
+            color: _ink,
+            fontWeight: FontWeight.w800,
+            fontSize: 13,
           ),
-
-          child: Icon(
-
-            icon,
-
-            size: 18,
-
-            color:
-
-                colors.onPrimaryContainer,
-
+        ),
+      ),
+      if (action.isNotEmpty)
+        TextButton(
+          onPressed: onAction,
+          style: TextButton.styleFrom(
+            padding: EdgeInsets.zero,
+            minimumSize: const Size(30, 24),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
-
-        ),
-
-        const SizedBox(
-
-          width: 11,
-
-        ),
-
-        Expanded(
-
           child: Text(
-
-            title,
-
-            style: TextStyle(
-
-              color: colors
-
-                  .onSurfaceVariant,
-
-              fontSize: 13,
-
-              fontWeight:
-
-                  FontWeight.w500,
-
+            action,
+            style: const TextStyle(
+              color: _purple,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w600,
             ),
-
           ),
-
         ),
+    ],
+  );
 
-        Text(
-
-          value,
-
-          style: TextStyle(
-
-            color: valueColor ??
-
-                colors.onSurface,
-
-            fontSize: 14,
-
-            fontWeight:
-
-                FontWeight.w800,
-
-          ),
-
-        ),
-
-      ],
-
+  Widget _paymentsChart(List<_DayTotals> days) {
+    final maxValue = days.fold<double>(
+      1,
+      (max, d) => math.max(max, math.max(d.received, d.pending)).toDouble(),
     );
-
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _panelHeader(
+          'Payments Overview',
+          action: 'View All',
+          onAction: widget.onOpenPayments,
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            _legend(_purple, 'Received'),
+            const SizedBox(width: 12),
+            _legend(_purpleLight, 'Pending'),
+          ],
+        ),
+        const SizedBox(height: 6),
+        SizedBox(
+          height: 132,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                width: 27,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      _axis(maxValue),
+                      style: const TextStyle(fontSize: 8, color: _muted),
+                    ),
+                    Text(
+                      _axis(maxValue * .66),
+                      style: const TextStyle(fontSize: 8, color: _muted),
+                    ),
+                    Text(
+                      _axis(maxValue * .33),
+                      style: const TextStyle(fontSize: 8, color: _muted),
+                    ),
+                    const Text(
+                      '0',
+                      style: TextStyle(fontSize: 8, color: _muted),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: CustomPaint(
+                        painter: _GridPainter(),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: days.map((d) {
+                            final receivedHeight = (d.received / maxValue)
+                                .clamp(0.0, 1.0)
+                                .toDouble();
+                            final pendingHeight = (d.pending / maxValue)
+                                .clamp(0.0, 1.0)
+                                .toDouble();
+                            return Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Expanded(
+                                      child: FractionallySizedBox(
+                                        heightFactor: receivedHeight,
+                                        alignment: Alignment.bottomCenter,
+                                        child: Container(
+                                          decoration: const BoxDecoration(
+                                            color: _purple,
+                                            borderRadius: BorderRadius.vertical(
+                                              top: Radius.circular(3),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: FractionallySizedBox(
+                                        heightFactor: pendingHeight,
+                                        alignment: Alignment.bottomCenter,
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            color: _purpleLight.withValues(
+                                              alpha: .72,
+                                            ),
+                                            borderRadius:
+                                                const BorderRadius.vertical(
+                                                  top: Radius.circular(3),
+                                                ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: days.map((d) {
+                        return Expanded(
+                          child: Center(
+                            child: Text(
+                              '${d.date.day} ${_month(d.date.month)}',
+                              maxLines: 1,
+                              style: const TextStyle(
+                                fontSize: 8,
+                                color: _muted,
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
+  String _axis(double value) {
+    if (value >= 100000) return '${(value / 1000).round()}K';
+    if (value >= 1000) return '${(value / 1000).toStringAsFixed(0)}K';
+    return value.round().toString();
+  }
+
+  Widget _recentPayments(List<PaymentTransaction> recent) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _panelHeader(
+        'Recent Payments',
+        action: 'View All',
+        onAction: widget.onOpenPayments,
+      ),
+      const SizedBox(height: 7),
+      if (recent.isEmpty) ...[
+        const SizedBox(
+          height: 110,
+          child: Center(
+            child: Text(
+              'No payments recorded yet',
+              style: TextStyle(color: _muted, fontSize: 11),
+            ),
+          ),
+        ),
+      ] else
+        ...recent.map(
+          (t) => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 7),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 12,
+                  backgroundColor: const Color(0xFFEAE5FF),
+                  child: Text(
+                    t.customerName.isEmpty
+                        ? '?'
+                        : t.customerName[0].toUpperCase(),
+                    style: const TextStyle(
+                      color: _purple,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    t.customerName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: _ink,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  '+${_money(t.amountReceived)}',
+                  style: const TextStyle(
+                    color: _green,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(width: 7),
+                SizedBox(
+                  width: 48,
+                  child: Text(
+                    _relativeTime(t.transactionDate),
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(color: _muted, fontSize: 9),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+    ],
+  );
+
+  Widget _salesmanActivity(int visited, int planned, double progress) {
+    final locations = _todayRoute.isEmpty
+        ? 'Route not set'
+        : _todayRoute.take(2).join(', ');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _panelHeader(
+          'Today’s Salesman Activity',
+          action: 'View Map',
+          onAction: widget.onOpenVisitAudit,
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            CircleAvatar(
+              radius: 17,
+              backgroundColor: const Color(0xFFEAE5FF),
+              child: const Icon(Icons.person_rounded, color: _purple, size: 19),
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Salesman',
+                    style: TextStyle(
+                      color: _ink,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(
+                    '$visited${planned > 0 ? '/$planned' : ''} customers visited',
+                    style: const TextStyle(color: _muted, fontSize: 9.5),
+                  ),
+                  const SizedBox(height: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      minHeight: 7,
+                      backgroundColor: const Color(0xFFECEBFA),
+                      valueColor: const AlwaysStoppedAnimation(_purple),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              '${(progress * 100).round()}%',
+              style: const TextStyle(
+                color: _ink,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Container(width: 1, height: 48, color: _line),
+            const SizedBox(width: 10),
+            const Icon(Icons.location_on_rounded, color: _purple, size: 18),
+            const SizedBox(width: 5),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Today’s Route',
+                    style: TextStyle(
+                      color: _ink,
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(
+                    locations,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: _muted, fontSize: 9),
+                  ),
+                  Text(
+                    _todayRoute.isEmpty
+                        ? 'Choose locations to begin'
+                        : '${_todayRoute.length} locations selected',
+                    style: const TextStyle(color: _muted, fontSize: 8.5),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _locationWiseDues(Map<String, double> locations) {
+    final entries = locations.entries.take(4).toList();
+    final maxDue = entries.isEmpty ? 1.0 : entries.first.value;
+    const colors = [_purple, Color(0xFFFF6269), Color(0xFFFFBC43), _blue];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _panelHeader(
+          'Location Wise Due',
+          action: 'View All',
+          onAction: widget.onOpenCustomers,
+        ),
+        const SizedBox(height: 8),
+        if (entries.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 18),
+            child: Text(
+              'No outstanding balances by location.',
+              style: TextStyle(color: _muted, fontSize: 10),
+            ),
+          )
+        else
+          ...List.generate(entries.length, (i) {
+            final e = entries[i];
+            final color = colors[i % colors.length];
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      e.key,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: _ink, fontSize: 10),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 70,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: (e.value / maxDue).clamp(0.0, 1.0).toDouble(),
+                        minHeight: 6,
+                        backgroundColor: color.withValues(alpha: .12),
+                        valueColor: AlwaysStoppedAnimation(
+                          color.withValues(alpha: .7),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _money(e.value),
+                    style: TextStyle(
+                      color: i == 0 ? _red : (i == 1 ? _orange : _ink),
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+      ],
+    );
+  }
+
+  Widget _legend(Color color, String label) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(2),
+        ),
+      ),
+      const SizedBox(width: 5),
+      Text(label, style: const TextStyle(color: _muted, fontSize: 9.5)),
+    ],
+  );
+
+  
+String _relativeTime(DateTime date) {
+  final difference = DateTime.now().difference(date);
+
+  if (difference.isNegative || difference.inMinutes < 1) {
+    return 'Just now';
+  }
+
+  if (difference.inMinutes < 60) {
+    return '${difference.inMinutes} min ago';
+  }
+
+  if (difference.inHours < 24) {
+    return '${difference.inHours} hour${difference.inHours == 1 ? '' : 's'} ago';
+  }
+
+  if (difference.inDays == 1) {
+    return 'Yesterday';
+  }
+
+  return '${date.day} ${_month(date.month)}';
 }
 
 
+  String _month(int month) => const [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ][month - 1];
+}
 
-// ============================================================
-
-// OVERVIEW DIVIDER
-
-// ============================================================
-
-
-
-class _OverviewDivider
-
-    extends StatelessWidget {
-
-  final ColorScheme colors;
-
-
-
-  const _OverviewDivider({
-
-    required this.colors,
-
+class _MetricCard extends StatelessWidget {
+  const _MetricCard({
+    required this.title,
+    required this.value,
+    required this.foot,
+    required this.icon,
+    required this.color,
+    required this.bg,
   });
-
-
+  final String title;
+  final String value;
+  final String foot;
+  final IconData icon;
+  final Color color;
+  final Color bg;
 
   @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: bg.withValues(alpha: .55),
+      borderRadius: BorderRadius.circular(11),
+      border: Border.all(color: color.withValues(alpha: .08)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: color == _MetricColors.purple
+                      ? _OwnerDashboardState._purple
+                      : const Color(0xFF535B75),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            Container(
+              width: 29,
+              height: 29,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: .75),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: color, size: 17),
+            ),
+          ],
+        ),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            value,
+            style: TextStyle(
+              color: color == _MetricColors.purple
+                  ? _OwnerDashboardState._ink
+                  : (color == const Color(0xFF159B68)
+                        ? const Color(0xFF08764E)
+                        : (color == const Color(0xFFD92D36)
+                              ? const Color(0xFFB4232B)
+                              : const Color(0xFF174EA6))),
+              fontSize: 19,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -.4,
+            ),
+          ),
+        ),
+        Text(
+          foot,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: Color(0xFF6D7590), fontSize: 8.5),
+        ),
+      ],
+    ),
+  );
+}
 
-  Widget build(
+class _MetricColors {
+  static const purple = Color(0xFF6846F5);
+}
 
-    BuildContext context,
+class _DayTotals {
+  const _DayTotals(this.date, this.received, this.pending);
+  final DateTime date;
+  final double received;
+  final double pending;
+}
 
-  ) {
-
-    return Padding(
-
-      padding:
-
-          const EdgeInsets.symmetric(
-
-        vertical: 13,
-
-      ),
-
-      child: Divider(
-
-        height: 1,
-
-        color:
-
-            colors.outlineVariant,
-
-      ),
-
-    );
-
+class _GridPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFFEEF0F8)
+      ..strokeWidth = 1;
+    for (var i = 0; i < 4; i++) {
+      final y = size.height * i / 3;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
   }
 
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

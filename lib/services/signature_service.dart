@@ -3,8 +3,7 @@ import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SignatureService {
-  static final SupabaseClient _supabase =
-      Supabase.instance.client;
+  static final SupabaseClient _supabase = Supabase.instance.client;
 
   static String? errorMessage;
 
@@ -12,21 +11,17 @@ class SignatureService {
   // DOWNLOAD SIGNATURE
   // ------------------------------------------------------------
 
-  static Future<Uint8List?> downloadSignature(
-    String? signaturePath,
-  ) async {
+  static Future<Uint8List?> downloadSignature(String? signaturePath) async {
     errorMessage = null;
 
-    if (signaturePath == null ||
-        signaturePath.isEmpty) {
+    if (signaturePath == null || signaturePath.isEmpty) {
       return null;
     }
 
     try {
-      final bytes =
-          await _supabase.storage
-              .from('payment-signatures')
-              .download(signaturePath);
+      final bytes = await _supabase.storage
+          .from('payment-signatures')
+          .download(signaturePath);
 
       return bytes;
     } catch (error) {

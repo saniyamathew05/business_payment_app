@@ -2,16 +2,14 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class LedgerService {
-  static final SupabaseClient _supabase =
-      Supabase.instance.client;
+  static final SupabaseClient _supabase = Supabase.instance.client;
 
   static bool isLoading = false;
   static String? errorMessage;
 
   static final Map<String, double> customerBalances = {};
 
-  static final ValueNotifier<int> dataVersion =
-      ValueNotifier<int>(0);
+  static final ValueNotifier<int> dataVersion = ValueNotifier<int>(0);
 
   // ------------------------------------------------------------
   // LOAD CUSTOMER BALANCES
@@ -21,22 +19,16 @@ class LedgerService {
     errorMessage = null;
 
     try {
-      final response =
-          await _supabase.rpc(
-        'get_customer_balances',
-      );
+      final response = await _supabase.rpc('get_customer_balances');
 
       customerBalances.clear();
 
       for (final row in response) {
-        final customerId =
-            row['customer_id'] as String;
+        final customerId = row['customer_id'] as String;
 
-        final balance =
-            (row['balance'] as num).toDouble();
+        final balance = (row['balance'] as num).toDouble();
 
-        customerBalances[customerId] =
-            balance;
+        customerBalances[customerId] = balance;
       }
 
       dataVersion.value++;
@@ -47,9 +39,7 @@ class LedgerService {
     }
   }
 
-  static double getCustomerBalance(
-    String customerId,
-  ) {
+  static double getCustomerBalance(String customerId) {
     return customerBalances[customerId] ?? 0;
   }
 
@@ -57,29 +47,19 @@ class LedgerService {
   // CUSTOMER LEDGER
   // ------------------------------------------------------------
 
-  static Future<List<Map<String, dynamic>>>
-      getCustomerLedger(
+  static Future<List<Map<String, dynamic>>> getCustomerLedger(
     String customerId,
   ) async {
     errorMessage = null;
 
     try {
-      final response =
-          await _supabase
-              .from('ledger_entries')
-              .select('*, profiles(name)')
-              .eq(
-                'customer_id',
-                customerId,
-              )
-              .order(
-                'transaction_date',
-                ascending: false,
-              );
+      final response = await _supabase
+          .from('ledger_entries')
+          .select('*, profiles(name)')
+          .eq('customer_id', customerId)
+          .order('transaction_date', ascending: false);
 
-      return List<Map<String, dynamic>>.from(
-        response,
-      );
+      return List<Map<String, dynamic>>.from(response);
     } catch (error) {
       errorMessage = error.toString();
       return [];
@@ -90,23 +70,18 @@ class LedgerService {
   // CURRENT BALANCE FROM LEDGER
   // ------------------------------------------------------------
 
-  static Future<double>
-      getCurrentBalanceFromLedger({
+  static Future<double> getCurrentBalanceFromLedger({
     required String customerId,
     required double openingBalance,
   }) async {
     errorMessage = null;
 
     try {
-      final response =
-          await _supabase.rpc(
-        'get_customer_balances',
-      );
+      final response = await _supabase.rpc('get_customer_balances');
 
       for (final row in response) {
         if (row['customer_id'] == customerId) {
-          return (row['balance'] as num)
-              .toDouble();
+          return (row['balance'] as num).toDouble();
         }
       }
 
@@ -121,19 +96,15 @@ class LedgerService {
   // SIGNATURE DOWNLOAD
   // ------------------------------------------------------------
 
-  static Future<Uint8List?> downloadSignature(
-    String? signaturePath,
-  ) async {
-    if (signaturePath == null ||
-        signaturePath.isEmpty) {
+  static Future<Uint8List?> downloadSignature(String? signaturePath) async {
+    if (signaturePath == null || signaturePath.isEmpty) {
       return null;
     }
 
     try {
-      final bytes =
-          await _supabase.storage
-              .from('payment-signatures')
-              .download(signaturePath);
+      final bytes = await _supabase.storage
+          .from('payment-signatures')
+          .download(signaturePath);
 
       return bytes;
     } catch (error) {
