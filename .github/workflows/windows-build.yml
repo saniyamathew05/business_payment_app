@@ -26,7 +26,36 @@ jobs:
         run: flutter pub get
 
       - name: Build Windows release
-        run: flutter build windows --release --dart-define=SUPABASE_PUBLISHABLE_KEY=${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+        env:
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SUPABASE_PUBLISHABLE_KEY)) {
+            throw "Set the SUPABASE_PUBLISHABLE_KEY repository secret before building."
+          }
+          flutter build windows --release "--dart-define=SUPABASE_PUBLISHABLE_KEY=$env:SUPABASE_PUBLISHABLE_KEY"
+
+      - name: Bundle Microsoft Visual C++ runtime
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) {
+            throw "Visual Studio locator was not found on the Windows runner."
+          }
+
+          $vsInstall = & $vswhere -latest -products '*' -property installationPath
+          $crtRoot = Join-Path $vsInstall "VC\Redist\MSVC"
+          $crt = Get-ChildItem $crtRoot -Directory -Recurse -Filter "Microsoft.VC143.CRT" |
+            Where-Object { $_.FullName -match "\\x64\\Microsoft\.VC143\.CRT$" } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+
+          if (-not $crt) {
+            throw "The x64 Microsoft Visual C++ runtime files were not found."
+          }
+
+          $releaseDir = "build/windows/x64/runner/Release"
+          Copy-Item -Path (Join-Path $crt.FullName "*") -Destination $releaseDir -Force
 
       - name: Create Windows ZIP
         shell: pwsh

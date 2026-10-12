@@ -23,6 +23,7 @@ import '../../services/transaction_service.dart';
 import '../payments/payment_screen.dart';
 
 import '../purchases/add_purchase_screen.dart';
+import '../../services/currency_formatter.dart';
 
 class CustomerDetailsScreen extends StatefulWidget {
   final Customer customer;
@@ -182,6 +183,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
     final phoneController = TextEditingController(text: _displayCustomer.phone);
 
+    final openingBalanceController = TextEditingController(
+      text: _displayCustomer.openingBalance.toStringAsFixed(2),
+    );
+
     final formKey = GlobalKey<FormState>();
 
     bool isSaving = false;
@@ -209,6 +214,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 location: locationController.text,
 
                 phone: phoneController.text,
+
+                openingBalance:
+                    double.tryParse(
+                      openingBalanceController.text.trim().replaceAll(',', ''),
+                    ) ??
+                    0,
               );
 
               if (!mounted || !dialogContext.mounted) return;
@@ -300,10 +311,32 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         ),
 
                         validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Phone number is required.';
-                          }
+                          return null;
+                        },
+                      ),
 
+                      const SizedBox(height: 14),
+
+                      TextFormField(
+                        controller: openingBalanceController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Opening balance',
+                          prefixText: '₹ ',
+                          prefixIcon: Icon(Icons.account_balance_wallet_outlined),
+                        ),
+                        validator: (value) {
+                          final amount = double.tryParse(
+                            (value ?? '').trim().replaceAll(',', ''),
+                          );
+                          if (amount == null) {
+                            return 'Enter a valid opening balance.';
+                          }
+                          if (amount < 0) {
+                            return 'Opening balance cannot be negative.';
+                          }
                           return null;
                         },
                       ),
@@ -346,6 +379,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     locationController.dispose();
 
     phoneController.dispose();
+
+    openingBalanceController.dispose();
 
     if (saved == true && mounted) {
       final updatedCustomer = CustomerService.getCustomerById(
@@ -557,7 +592,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 child: pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    _pdfSummaryItem('Purchases', _money(totalPurchases)),
+                    _pdfSummaryItem('Sales', _money(totalPurchases)),
                     _pdfSummaryItem('Returns', _money(totalReturns)),
                     _pdfSummaryItem('Settled', _money(totalSettled)),
                     _pdfSummaryItem('Discount', _money(totalDiscount)),
@@ -778,6 +813,174 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     await _refreshCustomerData();
   }
 
+  Future<void> _editReceivedPayment(Map<String, dynamic> entry) async {
+    final paymentId = entry['id']?.toString();
+    if (paymentId == null || paymentId.isEmpty) return;
+
+    final amount = (entry['amount'] as num?)?.toDouble() ?? 0;
+    final discount = (entry['discount'] as num?)?.toDouble() ?? 0;
+    final amountController = TextEditingController(
+      text: amount.toStringAsFixed(2),
+    );
+    final discountController = TextEditingController(
+      text: discount.toStringAsFixed(2),
+    );
+    final notesController = TextEditingController(
+      text: entry['notes']?.toString() ?? '',
+    );
+    final methodNoteController = TextEditingController(
+      text: entry['payment_method_note']?.toString() ?? '',
+    );
+    var method = (entry['payment_method']?.toString() ?? 'cash').toLowerCase();
+    const methods = ['cash', 'cheque', 'neft', 'gpay'];
+    if (!methods.contains(method)) method = 'cash';
+    final formKey = GlobalKey<FormState>();
+    DateTime paymentDate;
+    try {
+      paymentDate = DateTime.parse(
+        entry['transaction_date'].toString(),
+      ).toLocal();
+    } catch (_) {
+      paymentDate = DateTime.now();
+    }
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Edit received payment'),
+          content: SizedBox(
+            width: 440,
+            child: SingleChildScrollView(
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: amountController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Settlement amount (₹)',
+                      ),
+                      validator: (value) {
+                        final parsed = double.tryParse((value ?? '').trim());
+                        return parsed == null || parsed <= 0
+                            ? 'Enter an amount greater than zero'
+                            : null;
+                      },
+                    ),
+                    TextFormField(
+                      controller: discountController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Discount (₹)',
+                      ),
+                      validator: (value) {
+                        final parsed = double.tryParse((value ?? '').trim());
+                        final enteredAmount =
+                            double.tryParse(amountController.text.trim()) ?? 0;
+                        return parsed == null ||
+                                parsed < 0 ||
+                                parsed >= enteredAmount
+                            ? 'Discount must be less than amount'
+                            : null;
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      initialValue: method,
+                      decoration: const InputDecoration(
+                        labelText: 'Payment method',
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'cash', child: Text('Cash')),
+                        DropdownMenuItem(
+                          value: 'cheque',
+                          child: Text('Cheque'),
+                        ),
+                        DropdownMenuItem(value: 'neft', child: Text('NEFT')),
+                        DropdownMenuItem(
+                          value: 'gpay',
+                          child: Text('GPay / Online'),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) setDialogState(() => method = value);
+                      },
+                    ),
+                    TextFormField(
+                      controller: methodNoteController,
+                      decoration: const InputDecoration(
+                        labelText: 'Payment method note',
+                      ),
+                    ),
+                    TextFormField(
+                      controller: notesController,
+                      decoration: const InputDecoration(labelText: 'Notes'),
+                      maxLines: 2,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (!formKey.currentState!.validate()) return;
+                Navigator.pop(dialogContext, {
+                  'amount': double.parse(amountController.text.trim()),
+                  'discount': double.parse(discountController.text.trim()),
+                  'notes': notesController.text,
+                  'method': method,
+                  'methodNote': methodNoteController.text,
+                });
+              },
+              child: const Text('Save changes'),
+            ),
+          ],
+        ),
+      ),
+    );
+    amountController.dispose();
+    discountController.dispose();
+    notesController.dispose();
+    methodNoteController.dispose();
+    if (result == null || !mounted) return;
+
+    final success = await TransactionService.updatePayment(
+      paymentId: paymentId,
+      amount: result['amount'] as double,
+      discount: result['discount'] as double,
+      notes: result['notes'] as String,
+      paymentMethod: result['method'] as String,
+      paymentMethodNote: result['methodNote'] as String,
+      transactionDate: paymentDate,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          success
+              ? 'Payment updated.'
+              : (TransactionService.errorMessage ??
+                    'Could not update payment.'),
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+    if (success) await _refreshCustomerData();
+  }
+
   // ------------------------------------------------------------
 
   // EDIT PURCHASE
@@ -890,7 +1093,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             }
 
             return AlertDialog(
-              title: const Text('Edit Purchase'),
+              title: const Text('Edit Sale'),
 
               content: SingleChildScrollView(
                 child: Column(
@@ -907,7 +1110,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       ),
 
                       decoration: const InputDecoration(
-                        labelText: 'Purchase Amount',
+                        labelText: 'Sale Amount',
 
                         prefixText: 'Rs. ',
                       ),
@@ -940,7 +1143,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
                       child: InputDecorator(
                         decoration: const InputDecoration(
-                          labelText: 'Purchase Date',
+                          labelText: 'Sale Date',
 
                           prefixIcon: Icon(Icons.calendar_today_outlined),
                         ),
@@ -1162,9 +1365,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: Text(
-            isPaid ? 'Remove Paid Purchase?' : 'Delete Accidental Purchase?',
-          ),
+          title: Text(isPaid ? 'Remove Paid Sale?' : 'Delete Accidental Sale?'),
           content: Text(
             isPaid
                 ? 'This purchase has already been fully paid. It will be removed from the customer transaction history. The payment records will remain unchanged.'
@@ -1232,6 +1433,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     final bankChargeController = TextEditingController(text: '0');
     final notesController = TextEditingController();
     bool isSaving = false;
+    bool addBankChargeToBalance = true;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -1267,7 +1469,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     'p_transaction_date': DateTime.now()
                         .toUtc()
                         .toIso8601String(),
-                    'p_add_bank_charge': true,
+                    'p_add_bank_charge': addBankChargeToBalance,
                   },
                 );
 
@@ -1306,7 +1508,24 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         prefixText: '₹ ',
                       ),
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 8),
+                    CheckboxListTile(
+                      value: addBankChargeToBalance,
+                      onChanged: isSaving
+                          ? null
+                          : (value) {
+                              setDialogState(() {
+                                addBankChargeToBalance = value ?? false;
+                              });
+                            },
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: const Text('Add bank charges to customer balance'),
+                      subtitle: const Text(
+                        'Untick to record the bounced cheque without adding bank charges to the amount due.',
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                     TextField(
                       controller: notesController,
                       enabled: !isSaving,
@@ -1350,9 +1569,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       await _refreshCustomerData();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
-            'Cheque bounced. Customer balance updated with the cheque amount and bank charges.',
+            addBankChargeToBalance
+                ? 'Cheque bounced. Bank charges were added to the customer balance.'
+                : 'Cheque bounced. Bank charges were recorded but not added to the customer balance.',
           ),
         ),
       );
@@ -1602,7 +1823,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         ? value.toDouble()
         : double.tryParse(value?.toString() ?? '') ?? 0;
 
-    return 'Rs. ${number.toStringAsFixed(2)}';
+    return CurrencyFormatter.rupees(number);
   }
 
   // ------------------------------------------------------------
@@ -1678,24 +1899,27 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       });
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F7FC),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        surfaceTintColor: Theme.of(context).colorScheme.surface,
         elevation: 0,
         leading: IconButton(
           tooltip: 'Back',
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF24233A)),
+          icon: Icon(
+            Icons.arrow_back,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
         title: Text(
           customer.businessName,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w800,
-            color: Color(0xFF171629),
+            color: Theme.of(context).colorScheme.onSurface,
           ),
         ),
         actions: [
@@ -1707,8 +1931,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 icon: const Icon(Icons.edit_outlined, size: 16),
                 label: const Text('Edit'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF4934C8),
-                  side: const BorderSide(color: Color(0xFFE4E0F8)),
+                  foregroundColor: Theme.of(context).colorScheme.primary,
+                  side: BorderSide(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   visualDensity: VisualDensity.compact,
                 ),
@@ -1730,23 +1956,29 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       Container(
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: Theme.of(context).colorScheme.surface,
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: const Color(0xFFEAE7F4)),
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.outlineVariant,
+                          ),
                         ),
                         child: Row(
                           children: [
                             CircleAvatar(
                               radius: 23,
-                              backgroundColor: const Color(0xFFE8E1FF),
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.primaryContainer,
                               child: Text(
                                 customer.businessName.trim().isEmpty
                                     ? '?'
                                     : customer.businessName
                                           .trim()[0]
                                           .toUpperCase(),
-                                style: const TextStyle(
-                                  color: Color(0xFF4A35C7),
+                                style: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onPrimaryContainer,
                                   fontWeight: FontWeight.w800,
                                   fontSize: 17,
                                 ),
@@ -1761,19 +1993,23 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                     customer.businessName,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontWeight: FontWeight.w800,
                                       fontSize: 15,
-                                      color: Color(0xFF19182B),
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface,
                                     ),
                                   ),
                                   const SizedBox(height: 5),
                                   Row(
                                     children: [
-                                      const Icon(
+                                      Icon(
                                         Icons.location_on_outlined,
                                         size: 14,
-                                        color: Color(0xFF6B6B83),
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
                                       ),
                                       const SizedBox(width: 4),
                                       Expanded(
@@ -1781,9 +2017,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                           customer.location,
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 11,
-                                            color: Color(0xFF68677D),
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
                                           ),
                                         ),
                                       ),
@@ -1792,10 +2030,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                   const SizedBox(height: 3),
                                   Row(
                                     children: [
-                                      const Icon(
+                                      Icon(
                                         Icons.phone_outlined,
                                         size: 13,
-                                        color: Color(0xFF6B6B83),
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
                                       ),
                                       const SizedBox(width: 4),
                                       Expanded(
@@ -1803,9 +2043,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                           customer.phone,
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 11,
-                                            color: Color(0xFF68677D),
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
                                           ),
                                         ),
                                       ),
@@ -1819,10 +2061,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                         padding: EdgeInsets.zero,
                                         tooltip: 'Call customer',
                                         onPressed: _callCustomer,
-                                        icon: const Icon(
+                                        icon: Icon(
                                           Icons.call_outlined,
                                           size: 16,
-                                          color: Color(0xFF4934C8),
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.primary,
                                         ),
                                       ),
                                       IconButton(
@@ -1872,7 +2116,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                     _money(currentBalance),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w900,
                                       color: Color(0xFFB4232F),
@@ -1889,15 +2133,17 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       Container(
                         padding: const EdgeInsets.all(4),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: Theme.of(context).colorScheme.surface,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFEAE7F4)),
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.outlineVariant,
+                          ),
                         ),
                         child: Row(
                           children: [
                             _customerTab('Ledger', 'ledger'),
                             _customerTab('Details', 'details'),
-                            _customerTab('Purchases', 'purchases'),
+                            _customerTab('Sales', 'purchases'),
                             _customerTab('Photos', 'photos'),
                           ],
                         ),
@@ -1924,7 +2170,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                             ),
                             label: const Text('Export customer statement'),
                             style: TextButton.styleFrom(
-                              foregroundColor: const Color(0xFF4934C8),
+                              foregroundColor: Theme.of(
+                                context,
+                              ).colorScheme.primary,
                             ),
                           ),
                         ),
@@ -1950,7 +2198,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         ),
                       ] else if (_activeTab == 'purchases') ...[
                         _sectionHeading(
-                          'Purchase History',
+                          'Sales History',
                           _displayedPurchaseEntries.length,
                         ),
                         if (_displayedPurchaseEntries.isEmpty)
@@ -1968,11 +2216,13 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                             .map(
                               (entry) => Card(
                                 elevation: 0,
-                                color: Colors.white,
+                                color: Theme.of(context).colorScheme.surface,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
-                                  side: const BorderSide(
-                                    color: Color(0xFFEAE7F4),
+                                  side: BorderSide(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.outlineVariant,
                                   ),
                                 ),
                                 child: Padding(
@@ -1984,7 +2234,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                       Text(
                                         entry['transaction_date']?.toString() ??
                                             'Transaction',
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontWeight: FontWeight.w700,
                                         ),
                                       ),
@@ -2015,9 +2265,13 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               top: false,
               child: Container(
                 padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  border: Border(top: BorderSide(color: Color(0xFFEAE7F4))),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  border: Border(
+                    top: BorderSide(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
+                  ),
                 ),
                 child: Row(
                   children: [
@@ -2030,7 +2284,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                           label: const Text('Add Payment', maxLines: 1),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF18A66A),
-                            foregroundColor: Colors.white,
+                            foregroundColor: Theme.of(
+                              context,
+                            ).colorScheme.surface,
                             elevation: 0,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(9),
@@ -2046,10 +2302,14 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         child: ElevatedButton.icon(
                           onPressed: _newPurchase,
                           icon: const Icon(Icons.add, size: 18),
-                          label: const Text('Add Purchase', maxLines: 1),
+                          label: const Text('Add Sale', maxLines: 1),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF6245ED),
-                            foregroundColor: Colors.white,
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.primary,
+                            foregroundColor: Theme.of(
+                              context,
+                            ).colorScheme.surface,
                             elevation: 0,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(9),
@@ -2074,11 +2334,16 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 11),
           decoration: BoxDecoration(
-            color: selected ? const Color(0xFFECE8FF) : Colors.transparent,
+            color: selected
+                ? Theme.of(context).colorScheme.primaryContainer
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(9),
             border: selected
-                ? const Border(
-                    bottom: BorderSide(color: Color(0xFF6245ED), width: 2),
+                ? Border(
+                    bottom: BorderSide(
+                      color: Theme.of(context).colorScheme.primary,
+                      width: 2,
+                    ),
                   )
                 : null,
           ),
@@ -2089,8 +2354,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               fontSize: 12,
               fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
               color: selected
-                  ? const Color(0xFF4934C8)
-                  : const Color(0xFF55546B),
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
         ),
@@ -2101,11 +2366,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   Widget _buildLedgerTableHeader() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
-      decoration: const BoxDecoration(
-        color: Color(0xFFF0EFF8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.vertical(top: Radius.circular(10)),
       ),
-      child: const Row(
+      child: Row(
         children: [
           Expanded(
             flex: 2,
@@ -2114,7 +2379,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF626179),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -2125,7 +2390,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF626179),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -2137,7 +2402,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF626179),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -2149,7 +2414,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF626179),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -2163,9 +2428,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFEAE7F4)),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2216,16 +2481,19 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         Expanded(
           child: Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w800,
-              color: Color(0xFF222137),
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
         ),
         Text(
           '$count',
-          style: const TextStyle(fontSize: 12, color: Color(0xFF77758C)),
+          style: TextStyle(
+            fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
       ],
     ),
@@ -2234,17 +2502,19 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   Widget _emptyPhotosCard() => Container(
     padding: const EdgeInsets.all(26),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: Theme.of(context).colorScheme.surface,
       borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: const Color(0xFFEAE7F4)),
+      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
     ),
-    child: const Column(
+    child: Column(
       children: [
         Icon(Icons.photo_library_outlined, size: 38, color: Color(0xFF9A96B6)),
         SizedBox(height: 8),
         Text(
           'No customer signatures or photos yet',
-          style: TextStyle(color: Color(0xFF68677D)),
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
       ],
     ),
@@ -2280,19 +2550,22 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
               size: 48,
 
-              color: Colors.grey.shade400,
+              color: Theme.of(context).colorScheme.outline,
             ),
 
             const SizedBox(height: 12),
 
             Text(
               _selectedHistorySection == 'purchases'
-                  ? 'No purchases yet'
+                  ? 'No sales yet'
                   : _selectedHistorySection == 'payments'
                   ? 'No payments received yet'
                   : 'No sales returns yet',
 
-              style: TextStyle(fontSize: 17, color: Colors.grey.shade700),
+              style: TextStyle(
+                fontSize: 17,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ],
         ),
@@ -2302,18 +2575,13 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
   // Ledger filters: All / New Purchase / Payment Received / Sales.
   Widget _buildLedgerFilterSelector() {
-    const filters = <String>[
-      'All',
-      'New Purchase',
-      'Payment Received',
-      'Sales',
-    ];
+    const filters = <String>['All', 'New Sale', 'Payment Received', 'Sales'];
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFEAE7F4)),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
@@ -2329,19 +2597,19 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 onSelected: (_) {
                   setState(() => _selectedLedgerFilter = filter);
                 },
-                backgroundColor: Colors.white,
-                selectedColor: const Color(0xFFE8E1FF),
+                backgroundColor: Theme.of(context).colorScheme.surface,
+                selectedColor: Theme.of(context).colorScheme.primaryContainer,
                 labelStyle: TextStyle(
                   fontSize: 12,
                   fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                   color: selected
-                      ? const Color(0xFF4934C8)
-                      : const Color(0xFF55536B),
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
                 side: BorderSide(
                   color: selected
                       ? const Color(0xFFB9A9FF)
-                      : const Color(0xFFEAE7F4),
+                      : Theme.of(context).colorScheme.outlineVariant,
                 ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(9),
@@ -2360,7 +2628,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     List<Map<String, dynamic>> entries,
   ) {
     switch (_selectedLedgerFilter) {
-      case 'New Purchase':
+      case 'New Sale':
         return entries
             .where(
               (entry) =>
@@ -2461,7 +2729,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     children: [
                       Text(
                         isPurchase
-                            ? 'New Purchase'
+                            ? 'New Sale'
                             : isReturn
                             ? 'Sales Return'
                             : isBouncedCheck
@@ -2470,7 +2738,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                             ? 'Payment Received (Bounced)'
                             : 'Payment Received',
 
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 17,
 
                           fontWeight: FontWeight.bold,
@@ -2485,7 +2753,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         style: TextStyle(
                           fontSize: 12,
 
-                          color: Colors.grey.shade600,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ],
@@ -2494,7 +2762,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
                 if (isPurchase && _isOwner)
                   PopupMenuButton<String>(
-                    tooltip: 'Purchase options',
+                    tooltip: 'Sale options',
                     onSelected: (value) {
                       if (value == 'edit') {
                         _editPurchase(entry);
@@ -2513,7 +2781,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                           child: ListTile(
                             contentPadding: EdgeInsets.zero,
                             leading: Icon(Icons.edit_outlined),
-                            title: Text('Edit Purchase'),
+                            title: Text('Edit Sale'),
                           ),
                         ),
                         PopupMenuItem<String>(
@@ -2522,7 +2790,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                           child: const ListTile(
                             contentPadding: EdgeInsets.zero,
                             leading: Icon(Icons.delete_outline),
-                            title: Text('Delete Accidental Purchase'),
+                            title: Text('Delete Accidental Sale'),
                           ),
                         ),
                         PopupMenuItem<String>(
@@ -2531,11 +2799,20 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                           child: const ListTile(
                             contentPadding: EdgeInsets.zero,
                             leading: Icon(Icons.remove_circle_outline),
-                            title: Text('Remove Paid Purchase'),
+                            title: Text('Remove Paid Sale'),
                           ),
                         ),
                       ];
                     },
+                  ),
+
+                if (_isOwner &&
+                    type == 'payment' &&
+                    entry['is_bounced'] != true)
+                  IconButton(
+                    tooltip: 'Edit received payment',
+                    onPressed: () => _editReceivedPayment(entry),
+                    icon: const Icon(Icons.edit_outlined),
                   ),
 
                 if (!isPurchase &&
@@ -2590,7 +2867,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             const Divider(height: 24),
 
             if (isPurchase) ...[
-              _detailRow('Purchase Amount', _money(amount)),
+              _detailRow('Sale Amount', _money(amount)),
 
               const SizedBox(height: 8),
 
@@ -2677,7 +2954,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 padding: const EdgeInsets.all(12),
 
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
 
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -2711,10 +2988,15 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     return Row(
       children: [
         Expanded(
-          child: Text(title, style: TextStyle(color: Colors.grey.shade700)),
+          child: Text(
+            title,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
         ),
 
-        Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+        Text(value, style: TextStyle(fontWeight: FontWeight.w600)),
       ],
     );
   }
@@ -2799,7 +3081,9 @@ class _SignaturePreviewState extends State<_SignaturePreview> {
           padding: const EdgeInsets.all(8),
 
           decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey.shade300),
+            border: Border.all(
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
 
             borderRadius: BorderRadius.circular(8),
           ),

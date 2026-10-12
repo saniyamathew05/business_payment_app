@@ -3,12 +3,35 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class PurchaseService {
   static final SupabaseClient _supabase = Supabase.instance.client;
 
+  /// Ensures the supplied customer is a real customer record before writing.
+  static Future<void> _validateCustomer(String customerId) async {
+    final normalizedId = customerId.trim();
+
+    if (normalizedId.isEmpty ||
+        normalizedId.toLowerCase() == 'customer' ||
+        normalizedId.toLowerCase() == 'null') {
+      throw Exception(
+        'Please select a valid customer before saving the purchase.',
+      );
+    }
+
+    final customer = await _supabase
+        .from('customers')
+        .select('id')
+        .eq('id', normalizedId)
+        .maybeSingle();
+
+    if (customer == null) {
+      throw Exception(
+        'The selected customer was not found. Please select a customer from the customer list.',
+      );
+    }
+  }
+
   /// Records a new customer purchase.
   ///
-  /// Purchases always add the full purchase amount
-  /// to the customer's outstanding balance.
-  ///
-  /// Only an owner can record a purchase.
+  /// Purchases always add the full purchase amount to the customer's
+  /// outstanding balance. Only an owner can record a purchase.
   static Future<Map<String, dynamic>?> recordPurchase({
     required String customerId,
     required double amount,
@@ -21,6 +44,8 @@ class PurchaseService {
       throw Exception('You are not logged in.');
     }
 
+    await _validateCustomer(customerId);
+
     if (amount <= 0) {
       throw Exception('Purchase amount must be greater than zero.');
     }
@@ -28,7 +53,7 @@ class PurchaseService {
     final response = await _supabase.rpc(
       'record_purchase',
       params: {
-        'p_customer_id': customerId,
+        'p_customer_id': customerId.trim(),
         'p_amount': amount,
         'p_notes': notes == null || notes.trim().isEmpty ? null : notes.trim(),
         'p_transaction_date': (transactionDate ?? DateTime.now())

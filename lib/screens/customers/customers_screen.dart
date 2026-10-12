@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/customer.dart';
 import '../../services/customer_service.dart';
 import '../../services/transaction_service.dart';
+import '../../services/currency_formatter.dart';
 import 'add_customer_screen.dart';
 import 'customer_details_screen.dart';
 
@@ -22,10 +23,10 @@ class _CustomersScreenState extends State<CustomersScreen> {
 
   static const _purple = Color(0xFF4F2BCB);
   static const _purpleBright = Color(0xFF6D4AFF);
-  static const _page = Color(0xFFF6F7FC);
-  static const _ink = Color(0xFF11152E);
-  static const _muted = Color(0xFF68708B);
-  static const _border = Color(0xFFE5E7F2);
+  Color get _page => Theme.of(context).scaffoldBackgroundColor;
+  Color get _ink => Theme.of(context).colorScheme.onSurface;
+  Color get _muted => Theme.of(context).colorScheme.onSurfaceVariant;
+  Color get _border => Theme.of(context).colorScheme.outlineVariant;
 
   @override
   void initState() {
@@ -148,7 +149,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
         elevation: 0,
         scrolledUnderElevation: 0,
         titleSpacing: 20,
-        title: const Text(
+        title: Text(
           'Customers',
           style: TextStyle(
             fontWeight: FontWeight.w800,
@@ -173,7 +174,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                 ),
               ),
               icon: const Icon(Icons.add_rounded, size: 19),
-              label: const Text(
+              label: Text(
                 'Add Customer',
                 style: TextStyle(fontWeight: FontWeight.w700),
               ),
@@ -199,8 +200,8 @@ class _CustomersScreenState extends State<CustomersScreen> {
                       style: TextStyle(color: foreground, fontSize: 14),
                       decoration: InputDecoration(
                         hintText: 'Search by name, phone or location...',
-                        hintStyle: const TextStyle(color: _muted, fontSize: 13),
-                        prefixIcon: const Icon(
+                        hintStyle: TextStyle(color: _muted, fontSize: 13),
+                        prefixIcon: Icon(
                           Icons.search_rounded,
                           color: _muted,
                           size: 21,
@@ -219,14 +220,11 @@ class _CustomersScreenState extends State<CustomersScreen> {
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: _border),
+                          borderSide: BorderSide(color: _border),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: _purple,
-                            width: 1.4,
-                          ),
+                          borderSide: BorderSide(color: _purple, width: 1.4),
                         ),
                       ),
                     ),
@@ -333,15 +331,14 @@ class _CustomerRow extends StatelessWidget {
   final VoidCallback onDelete;
 
   static const _purple = Color(0xFF4F2BCB);
-  static const _muted = Color(0xFF68708B);
-
-  String _money(double amount) =>
-      '₹ ${amount.abs().toStringAsFixed(0).replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => ',')}';
+  String _money(double amount) => CurrencyFormatter.rupees(amount, decimals: 0);
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final foreground = Theme.of(context).colorScheme.onSurface;
+    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
+    final scheme = Theme.of(context).colorScheme;
     final surface = Theme.of(context).colorScheme.surface;
     final initials = customer.businessName.trim().isEmpty
         ? '?'
@@ -375,7 +372,7 @@ class _CustomerRow extends StatelessWidget {
                 ),
                 child: Text(
                   initials,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _purple,
                     fontWeight: FontWeight.w800,
                     fontSize: 12,
@@ -400,10 +397,10 @@ class _CustomerRow extends StatelessWidget {
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.location_on_outlined,
                           size: 13,
-                          color: _muted,
+                          color: muted,
                         ),
                         const SizedBox(width: 3),
                         Flexible(
@@ -411,19 +408,19 @@ class _CustomerRow extends StatelessWidget {
                             customer.location,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: _muted, fontSize: 11),
+                            style: TextStyle(color: muted, fontSize: 11),
                           ),
                         ),
-                        const Text(
+                        Text(
                           '  ·  ',
-                          style: TextStyle(color: _muted, fontSize: 11),
+                          style: TextStyle(color: muted, fontSize: 11),
                         ),
                         Flexible(
                           child: Text(
                             customer.phone,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: _muted, fontSize: 11),
+                            style: TextStyle(color: muted, fontSize: 11),
                           ),
                         ),
                       ],
@@ -433,23 +430,21 @@ class _CustomerRow extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                balance == 0 ? '₹ 0' : _money(balance),
+                balance == 0
+                    ? CurrencyFormatter.rupees(0, decimals: 0)
+                    : _money(balance),
                 style: TextStyle(
-                  color: balance == 0
-                      ? const Color(0xFF059669)
-                      : due
-                      ? const Color(0xFFDC2626)
-                      : const Color(0xFF059669),
+                  color: due ? scheme.error : scheme.tertiary,
                   fontWeight: FontWeight.w800,
                   fontSize: 13,
                 ),
               ),
               PopupMenuButton<String>(
                 tooltip: 'Customer options',
-                icon: const Icon(
+                icon: Icon(
                   Icons.more_vert_rounded,
                   size: 19,
-                  color: _muted,
+                  color: muted,
                 ),
                 onSelected: (value) {
                   if (value == 'delete') onDelete();
@@ -461,7 +456,7 @@ class _CustomerRow extends StatelessWidget {
                   ),
                 ],
               ),
-              const Icon(Icons.chevron_right_rounded, color: _muted, size: 20),
+              Icon(Icons.chevron_right_rounded, color: muted, size: 20),
             ],
           ),
         ),

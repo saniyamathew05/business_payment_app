@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../services/old_card_import_service.dart';
+import '../../services/currency_formatter.dart';
 
 /// Owner-only workflow for extracting and reviewing transactions from one
 /// customer's old handwritten card. This screen intentionally does not save
@@ -221,7 +222,7 @@ class _OldCardImportScreenState extends State<OldCardImportScreen> {
         if (runningBalance < 0) runningBalance = 0;
         if (writtenBalance != null &&
             (writtenBalance - runningBalance).abs() > 0.01) {
-          return 'Entry $number balance mismatch: calculated ₹${runningBalance.toStringAsFixed(2)}, but the card says ₹${writtenBalance.toStringAsFixed(2)}. Correct the entry before importing.';
+          return 'Entry $number balance mismatch: calculated ${CurrencyFormatter.rupees(runningBalance)}, but the card says ${CurrencyFormatter.rupees(writtenBalance)}. Correct the entry before importing.';
         }
       }
     }
@@ -294,8 +295,8 @@ class _OldCardImportScreenState extends State<OldCardImportScreen> {
           title: const Text('Historical card imported'),
           content: Text(
             '$importedCount transactions were imported successfully.\n\n'
-            'Starting balance: ₹${startingBalance ?? '—'}\n'
-            'Ending balance: ₹${endingBalance ?? '—'}',
+            'Starting balance: ${startingBalance == null ? '—' : CurrencyFormatter.rupees(num.tryParse(startingBalance.toString()) ?? 0)}\n'
+            'Ending balance: ${endingBalance == null ? '—' : CurrencyFormatter.rupees(num.tryParse(endingBalance.toString()) ?? 0)}',
           ),
           actions: [
             FilledButton(
@@ -768,10 +769,10 @@ class _OldCardImportScreenState extends State<OldCardImportScreen> {
             const SizedBox(height: 8),
             if (estimated != null) ...[
               Text(
-                'Implied starting balance: ₹${estimated.$1.toStringAsFixed(2)}',
+                'Implied starting balance: ${CurrencyFormatter.rupees(estimated.$1)}',
               ),
               Text(
-                'Calculated ending balance: ₹${estimated.$2.toStringAsFixed(2)}',
+                'Calculated ending balance: ${CurrencyFormatter.rupees(estimated.$2)}',
               ),
               const SizedBox(height: 6),
             ],

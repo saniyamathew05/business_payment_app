@@ -40,6 +40,39 @@ class SalesmanVisitService {
     return <String>[];
   }
 
+  static Future<String?> loadRouteNameForLocations(
+    List<String> assignedLocations,
+  ) async {
+    final normalizedAssigned = assignedLocations
+        .map((location) => location.trim().toLowerCase())
+        .where((location) => location.isNotEmpty)
+        .toList()
+      ..sort();
+    if (normalizedAssigned.isEmpty) return null;
+
+    final routes = await _client
+        .from('salesman_route_templates')
+        .select('route_name, locations');
+    for (final route in routes) {
+      final rawLocations = route['locations'];
+      if (rawLocations is! List) continue;
+      final routeLocations = rawLocations
+          .map((location) => location.toString().trim().toLowerCase())
+          .where((location) => location.isNotEmpty)
+          .toList()
+        ..sort();
+      if (routeLocations.length != normalizedAssigned.length) continue;
+      if (List.generate(
+        routeLocations.length,
+        (index) => routeLocations[index] == normalizedAssigned[index],
+      ).every((matches) => matches)) {
+        final name = route['route_name']?.toString().trim();
+        return name == null || name.isEmpty ? null : name;
+      }
+    }
+    return null;
+  }
+
   static Future<void> saveTodayRoute(List<String> locations) async {
     final userId = _requireUserId();
     final cleaned =

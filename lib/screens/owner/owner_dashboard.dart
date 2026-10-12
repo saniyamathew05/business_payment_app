@@ -7,6 +7,7 @@ import '../../models/transaction.dart';
 import '../../services/customer_service.dart';
 import '../../services/salesman_visit_service.dart';
 import '../../services/transaction_service.dart';
+import '../../services/currency_formatter.dart';
 
 /// Owner overview built around the supplied LedgerPro desktop reference.
 /// All financial/customer figures are read from the existing services.
@@ -35,12 +36,14 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
   List<String> _todayRoute = const [];
   String? _visitLoadError;
 
-  static const _ink = Color(0xFF151735);
-  static const _navy = Color(0xFF17163F);
+  Color get _ink => Theme.of(context).colorScheme.onSurface;
+  Color get _navy => Theme.of(context).colorScheme.onSurface;
   static const _purple = Color(0xFF6846F5);
   static const _purpleLight = Color(0xFF9A8BFF);
-  static const _line = Color(0xFFE8EAF5);
-  static const _muted = Color(0xFF7A819A);
+  Color get _line => Theme.of(context).colorScheme.outlineVariant;
+  Color get _muted => Theme.of(context).colorScheme.onSurfaceVariant;
+  Color get _surface => Theme.of(context).colorScheme.surface;
+  Color get _pageBackground => Theme.of(context).scaffoldBackgroundColor;
   static const _green = Color(0xFF159B68);
   static const _red = Color(0xFFD92D36);
   static const _orange = Color(0xFFEA8A26);
@@ -92,18 +95,11 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
     }
   }
 
-  String _money(num value, {bool decimals = false}) {
-    final amount = value.abs();
-    final whole = amount.toInt().toString();
-    final formatted = whole.replaceAllMapped(
-      RegExp(r'\B(?=(\d{3})+(?!\d))'),
-      (_) => ',',
-    );
-    final suffix = decimals
-        ? '.${(amount % 1 * 100).round().toString().padLeft(2, '0')}'
-        : '';
-    return '${value < 0 ? '- ' : ''}₹ $formatted$suffix';
-  }
+  String _money(num value, {bool decimals = false}) => CurrencyFormatter.format(
+    value,
+    currencyCode: 'INR',
+    decimals: decimals ? 2 : 0,
+  );
 
   String _greeting() {
     final hour = DateTime.now().hour;
@@ -222,7 +218,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
         : (visited / planned).clamp(0.0, 1.0).toDouble();
 
     return Container(
-      color: const Color(0xFFF7F8FE),
+      color: _pageBackground,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final wide = constraints.maxWidth >= 900;
@@ -251,10 +247,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                           const SizedBox(height: 4),
                           Text(
                             '${_greeting()}, ${widget.userName}! Here’s your business overview.',
-                            style: const TextStyle(
-                              color: Color(0xFF626B89),
-                              fontSize: 11.5,
-                            ),
+                            style: TextStyle(color: _muted, fontSize: 11.5),
                           ),
                         ],
                       ),
@@ -263,7 +256,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                       height: 34,
                       padding: const EdgeInsets.symmetric(horizontal: 9),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: _surface,
                         border: Border.all(color: _line),
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -275,7 +268,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                             Icons.keyboard_arrow_down_rounded,
                             size: 16,
                           ),
-                          style: const TextStyle(color: _ink, fontSize: 11),
+                          style: TextStyle(color: _ink, fontSize: 11),
                           items: const [
                             DropdownMenuItem(
                               value: 'Today',
@@ -306,7 +299,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                               height: 16,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Icon(
+                          : Icon(
                               Icons.notifications_none_rounded,
                               color: _navy,
                               size: 21,
@@ -404,7 +397,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                 ],
                 if (_visitLoadError != null) ...[
                   const SizedBox(height: 8),
-                  const Text(
+                  Text(
                     'Salesman activity is unavailable until visit tracking is configured.',
                     style: TextStyle(color: _muted, fontSize: 10),
                   ),
@@ -419,7 +412,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
 
   Widget _panel({required Widget child}) => Container(
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: _surface,
       borderRadius: BorderRadius.circular(12),
       border: Border.all(color: _line),
     ),
@@ -436,7 +429,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
       Expanded(
         child: Text(
           title,
-          style: const TextStyle(
+          style: TextStyle(
             color: _ink,
             fontWeight: FontWeight.w800,
             fontSize: 13,
@@ -453,7 +446,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
           ),
           child: Text(
             action,
-            style: const TextStyle(
+            style: TextStyle(
               color: _purple,
               fontSize: 10.5,
               fontWeight: FontWeight.w600,
@@ -499,20 +492,17 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                   children: [
                     Text(
                       _axis(maxValue),
-                      style: const TextStyle(fontSize: 8, color: _muted),
+                      style: TextStyle(fontSize: 8, color: _muted),
                     ),
                     Text(
                       _axis(maxValue * .66),
-                      style: const TextStyle(fontSize: 8, color: _muted),
+                      style: TextStyle(fontSize: 8, color: _muted),
                     ),
                     Text(
                       _axis(maxValue * .33),
-                      style: const TextStyle(fontSize: 8, color: _muted),
-                    ),
-                    const Text(
-                      '0',
                       style: TextStyle(fontSize: 8, color: _muted),
                     ),
+                    Text('0', style: TextStyle(fontSize: 8, color: _muted)),
                   ],
                 ),
               ),
@@ -588,10 +578,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                             child: Text(
                               '${d.date.day} ${_month(d.date.month)}',
                               maxLines: 1,
-                              style: const TextStyle(
-                                fontSize: 8,
-                                color: _muted,
-                              ),
+                              style: TextStyle(fontSize: 8, color: _muted),
                             ),
                           ),
                         );
@@ -623,7 +610,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
       ),
       const SizedBox(height: 7),
       if (recent.isEmpty) ...[
-        const SizedBox(
+        SizedBox(
           height: 110,
           child: Center(
             child: Text(
@@ -640,12 +627,15 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
               children: [
                 CircleAvatar(
                   radius: 12,
-                  backgroundColor: const Color(0xFFEAE5FF),
+                  backgroundColor:
+                      Theme.of(context).brightness == Brightness.dark
+                      ? const Color(0xFF30285A)
+                      : const Color(0xFFEAE5FF),
                   child: Text(
                     t.customerName.isEmpty
                         ? '?'
                         : t.customerName[0].toUpperCase(),
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: _purple,
                       fontSize: 10,
                       fontWeight: FontWeight.w800,
@@ -658,7 +648,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                     t.customerName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: _ink,
                       fontSize: 10.5,
                       fontWeight: FontWeight.w600,
@@ -668,7 +658,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                 const SizedBox(width: 5),
                 Text(
                   '+${_money(t.amountReceived)}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _green,
                     fontSize: 10,
                     fontWeight: FontWeight.w800,
@@ -680,7 +670,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                   child: Text(
                     _relativeTime(t.transactionDate),
                     textAlign: TextAlign.right,
-                    style: const TextStyle(color: _muted, fontSize: 9),
+                    style: TextStyle(color: _muted, fontSize: 9),
                   ),
                 ),
               ],
@@ -707,7 +697,9 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
           children: [
             CircleAvatar(
               radius: 17,
-              backgroundColor: const Color(0xFFEAE5FF),
+              backgroundColor: Theme.of(context).brightness == Brightness.dark
+                  ? const Color(0xFF30285A)
+                  : const Color(0xFFEAE5FF),
               child: const Icon(Icons.person_rounded, color: _purple, size: 19),
             ),
             const SizedBox(width: 9),
@@ -715,7 +707,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Salesman',
                     style: TextStyle(
                       color: _ink,
@@ -725,7 +717,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                   ),
                   Text(
                     '$visited${planned > 0 ? '/$planned' : ''} customers visited',
-                    style: const TextStyle(color: _muted, fontSize: 9.5),
+                    style: TextStyle(color: _muted, fontSize: 9.5),
                   ),
                   const SizedBox(height: 6),
                   ClipRRect(
@@ -733,7 +725,12 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                     child: LinearProgressIndicator(
                       value: progress,
                       minHeight: 7,
-                      backgroundColor: const Color(0xFFECEBFA),
+                      backgroundColor:
+                          Theme.of(context).brightness == Brightness.dark
+                          ? Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerHighest
+                          : const Color(0xFFECEBFA),
                       valueColor: const AlwaysStoppedAnimation(_purple),
                     ),
                   ),
@@ -743,7 +740,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
             const SizedBox(width: 10),
             Text(
               '${(progress * 100).round()}%',
-              style: const TextStyle(
+              style: TextStyle(
                 color: _ink,
                 fontSize: 10.5,
                 fontWeight: FontWeight.w800,
@@ -758,7 +755,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Today’s Route',
                     style: TextStyle(
                       color: _ink,
@@ -770,13 +767,13 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                     locations,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: _muted, fontSize: 9),
+                    style: TextStyle(color: _muted, fontSize: 9),
                   ),
                   Text(
                     _todayRoute.isEmpty
                         ? 'Choose locations to begin'
                         : '${_todayRoute.length} locations selected',
-                    style: const TextStyle(color: _muted, fontSize: 8.5),
+                    style: TextStyle(color: _muted, fontSize: 8.5),
                   ),
                 ],
               ),
@@ -801,8 +798,8 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
         ),
         const SizedBox(height: 8),
         if (entries.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 18),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 18),
             child: Text(
               'No outstanding balances by location.',
               style: TextStyle(color: _muted, fontSize: 10),
@@ -830,7 +827,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                       e.key,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: _ink, fontSize: 10),
+                      style: TextStyle(color: _ink, fontSize: 10),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -877,33 +874,31 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
         ),
       ),
       const SizedBox(width: 5),
-      Text(label, style: const TextStyle(color: _muted, fontSize: 9.5)),
+      Text(label, style: TextStyle(color: _muted, fontSize: 9.5)),
     ],
   );
 
-  
-String _relativeTime(DateTime date) {
-  final difference = DateTime.now().difference(date);
+  String _relativeTime(DateTime date) {
+    final difference = DateTime.now().difference(date);
 
-  if (difference.isNegative || difference.inMinutes < 1) {
-    return 'Just now';
+    if (difference.isNegative || difference.inMinutes < 1) {
+      return 'Just now';
+    }
+
+    if (difference.inMinutes < 60) {
+      return '${difference.inMinutes} min ago';
+    }
+
+    if (difference.inHours < 24) {
+      return '${difference.inHours} hour${difference.inHours == 1 ? '' : 's'} ago';
+    }
+
+    if (difference.inDays == 1) {
+      return 'Yesterday';
+    }
+
+    return '${date.day} ${_month(date.month)}';
   }
-
-  if (difference.inMinutes < 60) {
-    return '${difference.inMinutes} min ago';
-  }
-
-  if (difference.inHours < 24) {
-    return '${difference.inHours} hour${difference.inHours == 1 ? '' : 's'} ago';
-  }
-
-  if (difference.inDays == 1) {
-    return 'Yesterday';
-  }
-
-  return '${date.day} ${_month(date.month)}';
-}
-
 
   String _month(int month) => const [
     'Jan',
@@ -941,7 +936,9 @@ class _MetricCard extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(12),
     decoration: BoxDecoration(
-      color: bg.withValues(alpha: .55),
+      color: Theme.of(context).brightness == Brightness.dark
+          ? color.withValues(alpha: .16)
+          : bg.withValues(alpha: .55),
       borderRadius: BorderRadius.circular(11),
       border: Border.all(color: color.withValues(alpha: .08)),
     ),
@@ -959,7 +956,7 @@ class _MetricCard extends StatelessWidget {
                 style: TextStyle(
                   color: color == _MetricColors.purple
                       ? _OwnerDashboardState._purple
-                      : const Color(0xFF535B75),
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
                   fontSize: 10,
                   fontWeight: FontWeight.w600,
                 ),
@@ -969,7 +966,7 @@ class _MetricCard extends StatelessWidget {
               width: 29,
               height: 29,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: .75),
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(icon, color: color, size: 17),
@@ -982,13 +979,7 @@ class _MetricCard extends StatelessWidget {
           child: Text(
             value,
             style: TextStyle(
-              color: color == _MetricColors.purple
-                  ? _OwnerDashboardState._ink
-                  : (color == const Color(0xFF159B68)
-                        ? const Color(0xFF08764E)
-                        : (color == const Color(0xFFD92D36)
-                              ? const Color(0xFFB4232B)
-                              : const Color(0xFF174EA6))),
+              color: Theme.of(context).colorScheme.onSurface,
               fontSize: 19,
               fontWeight: FontWeight.w800,
               letterSpacing: -.4,
@@ -999,7 +990,10 @@ class _MetricCard extends StatelessWidget {
           foot,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: Color(0xFF6D7590), fontSize: 8.5),
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            fontSize: 8.5,
+          ),
         ),
       ],
     ),

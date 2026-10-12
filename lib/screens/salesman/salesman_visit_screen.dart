@@ -30,6 +30,9 @@ class _SalesmanVisitScreenState extends State<SalesmanVisitScreen> {
 
   List<String> get _availableLocations {
     final values = _customers
+        .where(
+          (customer) => TransactionService.getCustomerBalance(customer.id) > 0,
+        )
         .map((customer) => customer.location.trim())
         .where((location) => location.isNotEmpty)
         .toSet()
@@ -41,7 +44,11 @@ class _SalesmanVisitScreenState extends State<SalesmanVisitScreen> {
   List<Customer> get _routeCustomers {
     if (_routeLocations.isEmpty) return <Customer>[];
     return _customers
-        .where((customer) => _routeLocations.contains(customer.location.trim()))
+        .where(
+          (customer) =>
+              _routeLocations.contains(customer.location.trim()) &&
+              TransactionService.getCustomerBalance(customer.id) > 0,
+        )
         .toList()
       ..sort(
         (a, b) => a.businessName.toLowerCase().compareTo(
@@ -83,8 +90,11 @@ class _SalesmanVisitScreenState extends State<SalesmanVisitScreen> {
     }
   }
 
-  String _friendlyError(Object error) =>
-      error.toString().replaceFirst('Exception: ', '');
+  String _friendlyError(Object error) {
+    // Keep raw database/network details out of the interface.
+    debugPrint('Salesman visit operation failed: $error');
+    return 'We couldn’t load or save today’s route. Please check your connection and try again.';
+  }
 
   Future<void> _saveRoute() async {
     setState(() {

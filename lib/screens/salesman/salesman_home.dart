@@ -1,14 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:latlong2/latlong.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../models/customer.dart';
+
+import '../payments/payment_screen.dart';
 
 import 'salesman_customer_screen.dart';
 
@@ -44,8 +42,7 @@ class _SalesmanHomeState extends State<SalesmanHome> {
 
   List<String> selectedRouteLocations = <String>[];
 
-  Position? _currentPosition;
-  bool _locationUnavailable = false;
+  String? selectedRouteName;
 
   Map<String, String> todaysCustomerStatuses = <String, String>{};
 
@@ -62,7 +59,6 @@ class _SalesmanHomeState extends State<SalesmanHome> {
     super.initState();
 
     _loadData();
-    _loadCurrentLocation();
 
     _startPresenceMonitoring();
 
@@ -162,62 +158,6 @@ class _SalesmanHomeState extends State<SalesmanHome> {
     }
   }
 
-  Future<void> _loadCurrentLocation() async {
-    try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        if (mounted) setState(() => _locationUnavailable = true);
-        return;
-      }
-
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        if (mounted) setState(() => _locationUnavailable = true);
-        return;
-      }
-
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 15),
-        ),
-      );
-      if (!mounted) return;
-      setState(() {
-        _currentPosition = position;
-        _locationUnavailable = false;
-      });
-    } catch (error) {
-      debugPrint('Could not get current map location: $error');
-      if (mounted) setState(() => _locationUnavailable = true);
-    }
-  }
-
-  Future<void> _openDirections(Customer customer) async {
-    final destination =
-        '${customer.businessName}, ${customer.location}, Kerala, India';
-    final origin = _currentPosition == null
-        ? ''
-        : '&origin=${_currentPosition!.latitude},${_currentPosition!.longitude}';
-    final url = Uri.parse(
-      'https://www.google.com/maps/dir/?api=1$origin&destination=${Uri.encodeComponent(destination)}&travelmode=driving',
-    );
-    if (!await launchUrl(url, mode: LaunchMode.externalApplication) &&
-        mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Could not open directions. Please check your browser or maps app.',
-          ),
-        ),
-      );
-    }
-  }
-
   Future<void> _loadData() async {
     if (mounted) {
       setState(() {
@@ -231,6 +171,15 @@ class _SalesmanHomeState extends State<SalesmanHome> {
 
     try {
       selectedRouteLocations = await SalesmanVisitService.loadTodayRoute();
+      try {
+        selectedRouteName =
+            await SalesmanVisitService.loadRouteNameForLocations(
+              selectedRouteLocations,
+            );
+      } catch (error) {
+        selectedRouteName = null;
+        debugPrint('Could not load route name: $error');
+      }
 
       todaysCustomerStatuses = await SalesmanVisitService.loadTodayStatuses();
     } catch (error) {
@@ -245,8 +194,12 @@ class _SalesmanHomeState extends State<SalesmanHome> {
   }
 
   List<Customer> get routeCustomers {
+    final assignedLocations = selectedRouteLocations
+        .map((location) => location.trim().toLowerCase())
+        .where((location) => location.isNotEmpty)
+        .toSet();
     return CustomerService.customers.where((customer) {
-      return selectedRouteLocations.contains(customer.location.trim());
+      return assignedLocations.contains(customer.location.trim().toLowerCase());
     }).toList();
   }
 
@@ -283,110 +236,138 @@ class _SalesmanHomeState extends State<SalesmanHome> {
   String _statusLabel(Customer customer) {
     final status = todaysCustomerStatuses[customer.id];
     if (status == 'paid') return 'Visited';
-    if (status == 'rejected') return 'No Payment';
+    if (status == 'rejected') return 'Refused today';
     return 'Pending';
   }
 
   Future<void> _chooseTodayRoute() async {
-    final locations =
-        CustomerService.customers
-            .map((customer) => customer.location.trim())
-            .where((location) => location.isNotEmpty)
-            .toSet()
-            .toList()
-          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-
-    final draft = selectedRouteLocations.toSet();
-
-    final saved = await showDialog<bool>(
-      context: context,
-
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text("Today's route"),
-
-          content: SizedBox(
-            width: 420,
-
-            child: locations.isEmpty
-                ? const Text('No customer locations are available yet.')
-                : SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-
-                      children: locations
-                          .map(
-                            (location) => CheckboxListTile(
-                              value: draft.contains(location),
-
-                              title: Text(location),
-
-                              dense: true,
-
-                              contentPadding: EdgeInsets.zero,
-
-                              controlAffinity: ListTileControlAffinity.leading,
-
-                              onChanged: (checked) => setDialogState(() {
-                                if (checked == true) {
-                                  draft.add(location);
-                                } else {
-                                  draft.remove(location);
-                                }
-                              }),
-                            ),
-                          )
-                          .toList(),
-                    ),
-                  ),
-          ),
-
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
-            ),
-
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Save route'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (saved != true) return;
-
+    // Routes are assigned by the owner in Places & Routes. Salesmen must not
+    // be able to broaden their own route beyond the owner's daily assignment.
     try {
-      await SalesmanVisitService.saveTodayRoute(draft.toList());
-
+      final assigned = await SalesmanVisitService.loadTodayRoute();
+      String? routeName;
+      try {
+        routeName = await SalesmanVisitService.loadRouteNameForLocations(
+          assigned,
+        );
+      } catch (error) {
+        debugPrint('Could not load route name: $error');
+      }
       if (!mounted) return;
-
-      setState(() => selectedRouteLocations = draft.toList());
-
-      if (!mounted) return;
+      setState(() {
+        selectedRouteLocations = assigned;
+        selectedRouteName = routeName;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            draft.isEmpty
-                ? 'No locations selected. Customer list is empty until you choose a route.'
-                : 'Route saved for today.',
+            assigned.isEmpty
+                ? 'No route has been assigned by the owner for today.'
+                : 'Loaded the locations assigned by the owner.',
           ),
         ),
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not save route: $error')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not load assigned route: $error')),
+      );
+    }
+  }
+
+  Future<void> _startRoute() async {
+    try {
+      final assigned = await SalesmanVisitService.loadTodayRoute();
+      if (assigned.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No route has been assigned for today.'),
+          ),
+        );
+        return;
+      }
+
+      String? routeName;
+      try {
+        routeName = await SalesmanVisitService.loadRouteNameForLocations(
+          assigned,
+        );
+      } catch (error) {
+        debugPrint('Could not load route name: $error');
+      }
+      if (!mounted) return;
+      setState(() {
+        selectedRouteLocations = assigned;
+        selectedRouteName = routeName;
+        selectedIndex = 1;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not load assigned route: $error')),
+      );
+    }
+  }
+
+  Future<void> _recordRejectedVisit(Customer customer) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Record no payment'),
+
+        content: Text(
+          'Confirm that ${customer.businessName} did not pay today. This will prevent other salesmen from asking again today, and the owner can review the visit location.',
+        ),
+
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Confirm refusal'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      // Require a successful GPS capture before a refusal is recorded.
+      final refusalPosition = await SalesmanVisitService.captureLocation();
+
+      await SalesmanVisitService.recordStatus(
+        customerId: customer.id,
+        status: 'rejected',
+        capturedPosition: refusalPosition,
+      );
+
+      await _loadData();
+
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Refusal recorded with GPS. Other salesmen will see this customer as Refused today.',
+            ),
+          ),
+        );
+    } catch (error) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not record visit: $error')),
+        );
     }
   }
 
   Future<void> _openCustomer(Customer customer) async {
     try {
       todaysCustomerStatuses = await SalesmanVisitService.loadTodayStatuses();
-      if (!mounted) return;
 
       if (todaysCustomerStatuses.containsKey(customer.id)) {
         if (mounted) {
@@ -414,6 +395,40 @@ class _SalesmanHomeState extends State<SalesmanHome> {
         builder: (_) => SalesmanCustomerDetailsScreen(customer: customer),
       ),
     );
+
+    await _loadData();
+  }
+
+  Future<void> _openPaymentScreen(Customer customer) async {
+    final result = await Navigator.push<bool>(
+      context,
+
+      MaterialPageRoute(builder: (_) => PaymentScreen(customer: customer)),
+    );
+
+    if (result == true) {
+      try {
+        await SalesmanVisitService.recordStatus(
+          customerId: customer.id,
+          status: 'paid',
+        );
+
+        todaysCustomerStatuses[customer.id] = 'paid';
+      } catch (error) {
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Payment was saved, but the visit location/status could not be recorded: $error',
+              ),
+            ),
+          );
+      }
+    }
+
+    await TransactionService.loadTransactions();
+
+    if (mounted) setState(() {});
 
     await _loadData();
   }
@@ -480,6 +495,8 @@ class _SalesmanHomeState extends State<SalesmanHome> {
   }
 
   Widget _buildHomeTab() {
+    final colors = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final route = routeCustomers;
     final visited = route
         .where((c) => todaysCustomerStatuses[c.id] == 'paid')
@@ -491,11 +508,11 @@ class _SalesmanHomeState extends State<SalesmanHome> {
         .where((c) => !todaysCustomerStatuses.containsKey(c.id))
         .length;
     final remaining = pending;
-    final nextLocation = selectedRouteLocations.isEmpty
-        ? 'Choose a location'
-        : selectedRouteLocations.first;
+    final routeLabel = selectedRouteLocations.isEmpty
+        ? 'No route assigned'
+        : selectedRouteName ?? selectedRouteLocations.first;
     const purple = Color(0xFF5B3FE4);
-    const ink = Color(0xFF25233A);
+    final ink = Theme.of(context).colorScheme.onSurface;
 
     return RefreshIndicator(
       onRefresh: _loadData,
@@ -509,16 +526,19 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Good morning,',
-                      style: TextStyle(fontSize: 12, color: Color(0xFF77768A)),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       widget.userName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 21,
                         height: 1.15,
                         fontWeight: FontWeight.w800,
@@ -531,7 +551,7 @@ class _SalesmanHomeState extends State<SalesmanHome> {
               IconButton(
                 tooltip: 'Notifications',
                 onPressed: _loadData,
-                icon: const Icon(Icons.notifications_none_rounded, color: ink),
+                icon: Icon(Icons.notifications_none_rounded, color: ink),
               ),
             ],
           ),
@@ -539,9 +559,9 @@ class _SalesmanHomeState extends State<SalesmanHome> {
           Container(
             padding: const EdgeInsets.fromLTRB(14, 13, 14, 12),
             decoration: BoxDecoration(
-              color: const Color(0xFFFCFAFF),
+              color: Theme.of(context).colorScheme.surface,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFE8E2F1)),
+              border: Border.all(color: colors.outlineVariant),
             ),
             child: Row(
               children: [
@@ -563,30 +583,30 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         "Today's Route",
                         style: TextStyle(
                           fontSize: 11,
-                          color: Color(0xFF6E6B7D),
+                          color: colors.onSurfaceVariant,
                         ),
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        nextLocation,
+                        routeLabel,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w800,
-                          color: ink,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         '${route.length} customers',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
-                          color: Color(0xFF77768A),
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ],
@@ -615,7 +635,9 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                   label: 'Visited',
                   value: '$visited',
                   color: const Color(0xFF159B68),
-                  background: const Color(0xFFEAF8F2),
+                  background: isDark
+                      ? const Color(0xFF173A35)
+                      : const Color(0xFFEAF8F2),
                 ),
               ),
               const SizedBox(width: 8),
@@ -625,7 +647,9 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                   label: 'Pending',
                   value: '$pending',
                   color: const Color(0xFFE5A12B),
-                  background: const Color(0xFFFFF5E6),
+                  background: isDark
+                      ? const Color(0xFF3B3020)
+                      : const Color(0xFFFFF5E6),
                 ),
               ),
             ],
@@ -639,7 +663,9 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                   label: 'No Payment',
                   value: '$noPayment',
                   color: const Color(0xFFE55362),
-                  background: const Color(0xFFFFEFF0),
+                  background: isDark
+                      ? const Color(0xFF40252D)
+                      : const Color(0xFFFFEFF0),
                 ),
               ),
               const SizedBox(width: 8),
@@ -649,7 +675,9 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                   label: 'Remaining',
                   value: '$remaining',
                   color: purple,
-                  background: const Color(0xFFF0EDFF),
+                  background: isDark
+                      ? const Color(0xFF30285A)
+                      : const Color(0xFFF0EDFF),
                 ),
               ),
             ],
@@ -666,13 +694,7 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                   borderRadius: BorderRadius.circular(10),
                 ),
               ),
-              onPressed: () {
-                if (selectedRouteLocations.isEmpty) {
-                  _chooseTodayRoute();
-                } else {
-                  setState(() => selectedIndex = 2);
-                }
-              },
+              onPressed: _startRoute,
               child: const Text(
                 'Start Route',
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
@@ -682,13 +704,13 @@ class _SalesmanHomeState extends State<SalesmanHome> {
           const SizedBox(height: 24),
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
                   'Recent Payments',
                   style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w800,
-                    color: ink,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
               ),
@@ -702,12 +724,15 @@ class _SalesmanHomeState extends State<SalesmanHome> {
             ],
           ),
           if (TransactionService.transactions.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 20),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
               child: Center(
                 child: Text(
                   'No payments received yet',
-                  style: TextStyle(color: Color(0xFF77768A), fontSize: 12),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 12,
+                  ),
                 ),
               ),
             )
@@ -729,7 +754,9 @@ class _SalesmanHomeState extends State<SalesmanHome> {
 
   Widget _buildCustomersTab() {
     const purple = Color(0xFF5B3FE4);
-    const ink = Color(0xFF202033);
+    final colors = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink = colors.onSurface;
     final filters = ['All', 'Pending', 'Visited'];
 
     return SafeArea(
@@ -747,7 +774,7 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                   visualDensity: VisualDensity.compact,
                 ),
                 const SizedBox(width: 4),
-                const Expanded(
+                Expanded(
                   child: Text(
                     "Today's Customers",
                     style: TextStyle(
@@ -769,9 +796,9 @@ class _SalesmanHomeState extends State<SalesmanHome> {
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
                 hintText: 'Search customer...',
-                hintStyle: const TextStyle(
+                hintStyle: TextStyle(
                   fontSize: 13,
-                  color: Color(0xFF8B8DA0),
+                  color: colors.onSurfaceVariant,
                 ),
                 prefixIcon: const Icon(Icons.search_rounded, size: 19),
                 prefixIconConstraints: const BoxConstraints(minWidth: 40),
@@ -789,14 +816,14 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                   horizontal: 12,
                 ),
                 filled: true,
-                fillColor: const Color(0xFFF7F7FB),
+                fillColor: colors.surfaceContainerHigh,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(13),
-                  borderSide: const BorderSide(color: Color(0xFFE8E8F1)),
+                  borderSide: BorderSide(color: colors.outlineVariant),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(13),
-                  borderSide: const BorderSide(color: Color(0xFFE8E8F1)),
+                  borderSide: BorderSide(color: colors.outlineVariant),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(13),
@@ -826,10 +853,12 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                           horizontal: 5,
                         ),
                         decoration: BoxDecoration(
-                          color: selected ? purple : const Color(0xFFF6F6FA),
+                          color: selected
+                              ? purple
+                              : colors.surfaceContainerHigh,
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: selected ? purple : const Color(0xFFE7E7F0),
+                            color: selected ? purple : colors.outlineVariant,
                           ),
                         ),
                         child: Center(
@@ -842,9 +871,7 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                               fontWeight: selected
                                   ? FontWeight.w700
                                   : FontWeight.w500,
-                              color: selected
-                                  ? Colors.white
-                                  : const Color(0xFF45465B),
+                              color: selected ? Colors.white : colors.onSurface,
                             ),
                           ),
                         ),
@@ -874,8 +901,8 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                             searchController.text.trim().isNotEmpty
                                 ? 'No matching customers'
                                 : 'No customers in this filter',
-                            style: const TextStyle(
-                              color: Color(0xFF77798B),
+                            style: TextStyle(
+                              color: colors.onSurfaceVariant,
                               fontSize: 13,
                             ),
                           ),
@@ -889,18 +916,18 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                       physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.fromLTRB(20, 3, 20, 18),
                       itemCount: filteredCustomers.length,
-                      separatorBuilder: (_, _) => const Divider(
+                      separatorBuilder: (_, __) => Divider(
                         height: 1,
                         thickness: 0.6,
                         indent: 47,
-                        color: Color(0xFFEDEDF3),
+                        color: colors.outlineVariant,
                       ),
                       itemBuilder: (context, index) {
                         final customer = filteredCustomers[index];
                         final status = _statusLabel(customer);
                         final statusColor = switch (status) {
                           'Visited' => const Color(0xFF27845B),
-                          'No Payment' => const Color(0xFFD64A55),
+                          'Refused today' => const Color(0xFFD64A55),
                           _ => const Color(0xFFD58B28),
                         };
                         final initials = customer.businessName
@@ -910,12 +937,19 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                             .take(2)
                             .map((part) => part[0].toUpperCase())
                             .join();
-                        final avatarColors = const [
-                          Color(0xFFE0D9FF),
-                          Color(0xFFDCE9FF),
-                          Color(0xFFE9DFFF),
-                          Color(0xFFD9F0EB),
-                        ];
+                        final avatarColors = isDark
+                            ? const [
+                                Color(0xFF41318D),
+                                Color(0xFF253D68),
+                                Color(0xFF48346E),
+                                Color(0xFF214B45),
+                              ]
+                            : const [
+                                Color(0xFFE0D9FF),
+                                Color(0xFFDCE9FF),
+                                Color(0xFFE9DFFF),
+                                Color(0xFFD9F0EB),
+                              ];
                         return InkWell(
                           onTap: () => _openCustomer(customer),
                           borderRadius: BorderRadius.circular(12),
@@ -938,8 +972,10 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                                   alignment: Alignment.center,
                                   child: Text(
                                     initials.isEmpty ? '?' : initials,
-                                    style: const TextStyle(
-                                      color: Color(0xFF5142A5),
+                                    style: TextStyle(
+                                      color: isDark
+                                          ? const Color(0xFFEAE5FF)
+                                          : const Color(0xFF5142A5),
                                       fontSize: 11,
                                       fontWeight: FontWeight.w800,
                                     ),
@@ -955,19 +991,44 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                                         customer.businessName,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           color: ink,
                                           fontSize: 12.5,
                                           fontWeight: FontWeight.w700,
                                         ),
                                       ),
+                                      if (status == 'Refused today') ...[
+                                        const SizedBox(height: 3),
+                                        const Row(
+                                          children: [
+                                            Icon(
+                                              Icons.block_rounded,
+                                              size: 11,
+                                              color: Color(0xFFD64A55),
+                                            ),
+                                            SizedBox(width: 4),
+                                            Expanded(
+                                              child: Text(
+                                                'Already refused today — do not ask again',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: Color(0xFFD64A55),
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
                                       const SizedBox(height: 3),
                                       Row(
                                         children: [
-                                          const Icon(
+                                          Icon(
                                             Icons.location_on_outlined,
                                             size: 11,
-                                            color: Color(0xFF85879A),
+                                            color: colors.onSurfaceVariant,
                                           ),
                                           const SizedBox(width: 2),
                                           Expanded(
@@ -975,8 +1036,8 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                                               customer.location,
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                color: Color(0xFF85879A),
+                                              style: TextStyle(
+                                                color: colors.onSurfaceVariant,
                                                 fontSize: 10.5,
                                               ),
                                             ),
@@ -1006,10 +1067,10 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                                   ),
                                 ),
                                 const SizedBox(width: 4),
-                                const Icon(
+                                Icon(
                                   Icons.chevron_right_rounded,
                                   size: 17,
-                                  color: Color(0xFF85879A),
+                                  color: colors.onSurfaceVariant,
                                 ),
                               ],
                             ),
@@ -1025,25 +1086,15 @@ class _SalesmanHomeState extends State<SalesmanHome> {
   }
 
   Widget _buildMapTab() {
-    const ink = Color(0xFF25233A);
+    const purple = Color(0xFF5B3FE4);
+    final ink = Theme.of(context).colorScheme.onSurface;
     final customers = routeCustomers;
     final unvisitedCustomers = customers
-        .where((customer) => !todaysCustomerStatuses.containsKey(customer.id))
+        .where((c) => !todaysCustomerStatuses.containsKey(c.id))
         .toList();
     final Customer? nextCustomer = unvisitedCustomers.isEmpty
         ? null
         : unvisitedCustomers.first;
-    final currentPoint = _currentPosition == null
-        ? null
-        : LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
-
-    // The Customer model currently stores a business name, location text and phone,
-    // but not latitude/longitude. The real map therefore shows the actual current
-    // GPS location; customer pins/route geometry require coordinates saved per customer.
-    const fallbackCenter = LatLng(
-      9.755,
-      77.115,
-    ); // Kattappana town fallback only.
 
     return SafeArea(
       child: Column(
@@ -1057,23 +1108,20 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                   icon: const Icon(Icons.arrow_back_rounded),
                   visualDensity: VisualDensity.compact,
                 ),
-                const Expanded(
+                Expanded(
                   child: Text(
                     "Today's Route (Map)",
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w800,
-                      color: ink,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                 ),
                 IconButton(
-                  onPressed: () async {
-                    await _loadCurrentLocation();
-                    await _loadData();
-                  },
-                  icon: const Icon(Icons.my_location_rounded),
-                  tooltip: 'Refresh my location and route',
+                  onPressed: _loadData,
+                  icon: const Icon(Icons.refresh_rounded),
+                  tooltip: 'Refresh route',
                 ),
               ],
             ),
@@ -1082,90 +1130,63 @@ class _SalesmanHomeState extends State<SalesmanHome> {
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: FlutterMap(
-                    key: ValueKey(
-                      currentPoint?.toString() ?? 'route-map-fallback',
-                    ),
-                    options: MapOptions(
-                      initialCenter: currentPoint ?? fallbackCenter,
-                      initialZoom: currentPoint == null ? 13.0 : 15.0,
-                      interactionOptions: const InteractionOptions(
-                        flags: InteractiveFlag.all,
+                  child: CustomPaint(painter: _SalesmanMapPainter()),
+                ),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CustomPaint(
+                      painter: _SalesmanRoutePainter(
+                        stopCount: customers.length,
                       ),
                     ),
-                    children: [
-                      TileLayer(
-                        urlTemplate:
-                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        userAgentPackageName:
-                            'com.example.business_payment_app',
-                      ),
-                      if (currentPoint != null)
-                        MarkerLayer(
-                          markers: [
-                            Marker(
-                              point: currentPoint,
-                              width: 48,
-                              height: 48,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF2587F7),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: Colors.white,
-                                    width: 3,
-                                  ),
-                                  boxShadow: const [
-                                    BoxShadow(
-                                      color: Color(0x33000000),
-                                      blurRadius: 7,
-                                      offset: Offset(0, 3),
-                                    ),
-                                  ],
-                                ),
-                                child: const Icon(
-                                  Icons.my_location_rounded,
-                                  color: Colors.white,
-                                  size: 22,
-                                ),
-                              ),
+                  ),
+                ),
+                ...List.generate(customers.length.clamp(0, 5).toInt(), (i) {
+                  final points = const [
+                    Offset(.16, .73),
+                    Offset(.31, .54),
+                    Offset(.54, .65),
+                    Offset(.72, .39),
+                    Offset(.49, .20),
+                  ];
+                  final point = points[i % points.length];
+                  final customer = customers[i];
+                  final handled = todaysCustomerStatuses.containsKey(
+                    customer.id,
+                  );
+                  return Positioned(
+                    left: MediaQuery.of(context).size.width * point.dx - 16,
+                    top: (MediaQuery.of(context).size.height - 190) * point.dy,
+                    child: GestureDetector(
+                      onTap: () => _openCustomer(customer),
+                      child: Container(
+                        width: 34,
+                        height: 34,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: handled ? const Color(0xFF1985F7) : purple,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x33000000),
+                              blurRadius: 5,
+                              offset: Offset(0, 2),
                             ),
                           ],
                         ),
-                      RichAttributionWidget(
-                        alignment: AttributionAlignment.bottomRight,
-                        attributions: [
-                          TextSourceAttribution(
-                            'OpenStreetMap contributors',
-                            onTap: () => launchUrl(
-                              Uri.parse(
-                                'https://www.openstreetmap.org/copyright',
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                if (_locationUnavailable)
-                  Positioned(
-                    top: 12,
-                    left: 12,
-                    right: 12,
-                    child: Material(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      elevation: 3,
-                      child: const Padding(
-                        padding: EdgeInsets.all(10),
                         child: Text(
-                          'Showing the route area. Enable location permission to show your live position.',
-                          style: TextStyle(fontSize: 12, color: ink),
+                          '${i + 1}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                  );
+                }),
                 Positioned(
                   left: 14,
                   right: 14,
@@ -1173,7 +1194,7 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                   child: Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: Theme.of(context).colorScheme.surface,
                       borderRadius: BorderRadius.circular(17),
                       boxShadow: const [
                         BoxShadow(
@@ -1185,17 +1206,16 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
                           nextCustomer?.businessName ??
                               (customers.isEmpty
                                   ? 'No route selected'
                                   : 'Route completed'),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w800,
-                            color: ink,
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
                         ),
                         const SizedBox(height: 3),
@@ -1203,21 +1223,13 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                           nextCustomer == null
                               ? 'Choose customers for today or review your visits'
                               : 'Next stop · ${nextCustomer.location}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11,
-                            color: Color(0xFF77768A),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
                           ),
                         ),
-                        if (currentPoint == null) ...[
-                          const SizedBox(height: 5),
-                          const Text(
-                            'Live location is unavailable. The map is centred on the selected route area.',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Color(0xFF77768A),
-                            ),
-                          ),
-                        ],
                         const SizedBox(height: 11),
                         Row(
                           children: [
@@ -1225,7 +1237,7 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                               child: OutlinedButton.icon(
                                 onPressed: nextCustomer == null
                                     ? _chooseTodayRoute
-                                    : () => _openDirections(nextCustomer),
+                                    : () => _openCustomer(nextCustomer),
                                 icon: const Icon(
                                   Icons.directions_rounded,
                                   size: 16,
@@ -1253,6 +1265,162 @@ class _SalesmanHomeState extends State<SalesmanHome> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildPaymentsTab() {
+    final todayCollection = TransactionService.getCollectedToday();
+
+    final paymentCount = TransactionService.transactions.length;
+
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 30),
+
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+
+                children: [
+                  Text(
+                    'Payments',
+
+                    style: TextStyle(
+                      fontSize: 28,
+
+                      fontWeight: FontWeight.w800,
+
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+
+                  SizedBox(height: 4),
+
+                  Text('All payments received'),
+                ],
+              ),
+            ),
+
+            IconButton.filledTonal(
+              tooltip: 'Refresh',
+
+              onPressed: _loadData,
+
+              icon: const Icon(Icons.refresh_rounded),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 22),
+
+        Row(
+          children: [
+            Expanded(
+              child: _MiniSummaryCard(
+                icon: Icons.payments_outlined,
+
+                title: 'Today',
+
+                value: '₹${todayCollection.toStringAsFixed(2)}',
+              ),
+            ),
+
+            const SizedBox(width: 12),
+
+            Expanded(
+              child: _MiniSummaryCard(
+                icon: Icons.receipt_long_outlined,
+
+                title: 'Transactions',
+
+                value: paymentCount.toString(),
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 24),
+
+        Container(
+          padding: const EdgeInsets.all(22),
+
+          decoration: BoxDecoration(
+            color: Theme.of(
+              context,
+            ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
+
+            borderRadius: BorderRadius.circular(22),
+
+            border: Border.all(
+              color: Theme.of(
+                context,
+              ).colorScheme.outlineVariant.withValues(alpha: 0.5),
+            ),
+          ),
+
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(18),
+
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+
+                  shape: BoxShape.circle,
+                ),
+
+                child: Icon(
+                  Icons.receipt_long_rounded,
+
+                  size: 38,
+
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                ),
+              ),
+
+              const SizedBox(height: 18),
+
+              const Text(
+                'Payment History',
+
+                style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800),
+              ),
+
+              const SizedBox(height: 8),
+
+              Text(
+                'View payment amounts, customers, signatures and transaction details.',
+
+                textAlign: TextAlign.center,
+
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+
+                  height: 1.45,
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              SizedBox(
+                width: double.infinity,
+
+                child: FilledButton.icon(
+                  onPressed: _openPayments,
+
+                  icon: const Icon(Icons.open_in_new_rounded),
+
+                  label: const Text('Open Payment History'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -1479,6 +1647,20 @@ class _SalesmanHomeState extends State<SalesmanHome> {
     );
   }
 
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+
+    if (hour < 12) {
+      return 'Good morning';
+    }
+
+    if (hour < 17) {
+      return 'Good afternoon';
+    }
+
+    return 'Good evening';
+  }
+
   String _getInitials(String name) {
     final parts = name.trim().split(RegExp(r'\s+'));
 
@@ -1512,19 +1694,9 @@ class _SalesmanHomeState extends State<SalesmanHome> {
 
   @override
   Widget build(BuildContext context) {
-    final pages = [
-      _buildHomeTab(),
-      _buildCustomersTab(),
-      _buildMapTab(),
-      _buildMoreTab(),
-    ];
+    final pages = [_buildHomeTab(), _buildCustomersTab(), _buildMoreTab()];
 
-    final titles = [
-      'LedgerPro',
-      "Today's Customers",
-      "Today's Route (Map)",
-      'Profile',
-    ];
+    final titles = ['LedgerPro', "Today's Customers", 'Profile'];
 
     return Scaffold(
       appBar: AppBar(
@@ -1623,11 +1795,6 @@ class _SalesmanHomeState extends State<SalesmanHome> {
           ),
 
           NavigationDestination(
-            icon: Icon(Icons.map_outlined),
-            selectedIcon: Icon(Icons.map_rounded),
-            label: 'Map',
-          ),
-          NavigationDestination(
             icon: Icon(Icons.person_outline_rounded),
             selectedIcon: Icon(Icons.person_rounded),
             label: 'Profile',
@@ -1655,47 +1822,166 @@ class _SalesmanStatusCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) => Container(
-    height: 68,
-    padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
-    decoration: BoxDecoration(
-      color: background,
-      borderRadius: BorderRadius.circular(13),
-    ),
-    child: Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 10,
-                  color: Color(0xFF555368),
-                  fontWeight: FontWeight.w600,
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final displayColor = isDark
+        ? Color.lerp(color, Colors.white, 0.32)!
+        : color;
+    return Container(
+      height: 68,
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+      decoration: BoxDecoration(
+        color: isDark ? colors.surfaceContainerHigh : background,
+        borderRadius: BorderRadius.circular(13),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: colors.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: 17,
-                  height: 1,
-                  color: color,
-                  fontWeight: FontWeight.w800,
+                const SizedBox(height: 3),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 17,
+                    height: 1,
+                    color: displayColor,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        Icon(icon, color: color, size: 21),
-      ],
-    ),
-  );
+          Icon(icon, color: displayColor, size: 21),
+        ],
+      ),
+    );
+  }
+}
+
+class _SalesmanMapPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bg = Paint()..color = const Color(0xFFE9F0E8);
+    canvas.drawRect(Offset.zero & size, bg);
+    final park = Paint()..color = const Color(0xFFD8E9D7);
+    canvas.drawPath(
+      Path()
+        ..moveTo(size.width * .72, 0)
+        ..lineTo(size.width, 0)
+        ..lineTo(size.width, size.height * .42)
+        ..lineTo(size.width * .83, size.height * .35)
+        ..close(),
+      park,
+    );
+    final block = Paint()..color = const Color(0xFFF5F2E9);
+    for (var i = 0; i < 7; i++) {
+      final y = size.height * (i / 7);
+      canvas.drawPath(
+        Path()
+          ..moveTo(0, y + 12)
+          ..lineTo(size.width * .42, y - 15)
+          ..lineTo(size.width * .57, y + 7)
+          ..lineTo(size.width * .2, y + 34)
+          ..close(),
+        block,
+      );
+    }
+    final minor = Paint()
+      ..color = const Color(0xFFFFFFFF)
+      ..strokeWidth = 5
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    final minorEdge = Paint()
+      ..color = const Color(0xFFD9D6CA)
+      ..strokeWidth = 7
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    final paths = <Path>[
+      Path()
+        ..moveTo(-10, size.height * .17)
+        ..lineTo(size.width * .34, size.height * .28)
+        ..lineTo(size.width * .52, size.height * .19)
+        ..lineTo(size.width + 10, size.height * .31),
+      Path()
+        ..moveTo(size.width * .04, size.height * .52)
+        ..lineTo(size.width * .4, size.height * .42)
+        ..lineTo(size.width * .65, size.height * .54)
+        ..lineTo(size.width + 10, size.height * .46),
+      Path()
+        ..moveTo(size.width * .1, size.height * .83)
+        ..lineTo(size.width * .4, size.height * .7)
+        ..lineTo(size.width * .72, size.height * .78)
+        ..lineTo(size.width + 10, size.height * .69),
+      Path()
+        ..moveTo(size.width * .25, -10)
+        ..lineTo(size.width * .43, size.height * .3)
+        ..lineTo(size.width * .29, size.height * .57)
+        ..lineTo(size.width * .5, size.height + 10),
+      Path()
+        ..moveTo(size.width * .77, -10)
+        ..lineTo(size.width * .62, size.height * .25)
+        ..lineTo(size.width * .82, size.height * .53)
+        ..lineTo(size.width * .68, size.height + 10),
+    ];
+    for (final path in paths) {
+      canvas.drawPath(path, minorEdge);
+      canvas.drawPath(path, minor);
+    }
+    final route = Paint()
+      ..color = const Color(0xFF6A4CF5)
+      ..strokeWidth = 4
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    canvas.drawPath(
+      Path()
+        ..moveTo(size.width * .16, size.height * .76)
+        ..lineTo(size.width * .28, size.height * .61)
+        ..lineTo(size.width * .43, size.height * .66)
+        ..lineTo(size.width * .55, size.height * .49)
+        ..lineTo(size.width * .74, size.height * .36)
+        ..lineTo(size.width * .53, size.height * .2),
+      route,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _SalesmanRoutePainter extends CustomPainter {
+  final int stopCount;
+  const _SalesmanRoutePainter({required this.stopCount});
+  @override
+  void paint(Canvas canvas, Size size) {
+    final current = Paint()
+      ..color = const Color(0xFF2587F7)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(size.width * .29, size.height * .51), 8, current);
+    final white = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    canvas.drawCircle(Offset(size.width * .29, size.height * .51), 8, white);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SalesmanRoutePainter oldDelegate) =>
+      oldDelegate.stopCount != stopCount;
 }
 
 // PROFILE AVATAR
@@ -1737,9 +2023,498 @@ class _ProfileAvatar extends StatelessWidget {
 
 // ============================================================
 
+class _StatCard extends StatelessWidget {
+  final IconData icon;
+
+  final String title;
+
+  final String value;
+
+  const _StatCard({
+    required this.icon,
+
+    required this.title,
+
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+
+      decoration: BoxDecoration(
+        color: Theme.of(
+          context,
+        ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.65),
+
+        borderRadius: BorderRadius.circular(18),
+
+        border: Border.all(
+          color: Theme.of(
+            context,
+          ).colorScheme.outlineVariant.withValues(alpha: 0.4),
+        ),
+      ),
+
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+
+        children: [
+          Icon(icon, size: 24, color: Theme.of(context).colorScheme.primary),
+
+          const SizedBox(height: 14),
+
+          Text(
+            value,
+
+            maxLines: 1,
+
+            overflow: TextOverflow.ellipsis,
+
+            style: const TextStyle(
+              fontSize: 22,
+
+              fontWeight: FontWeight.w800,
+
+              letterSpacing: -0.4,
+            ),
+          ),
+
+          const SizedBox(height: 3),
+
+          Text(
+            title,
+
+            style: TextStyle(
+              fontSize: 12,
+
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ============================================================
 
 // MINI SUMMARY CARD
+
+// ============================================================
+
+class _MiniSummaryCard extends StatelessWidget {
+  final IconData icon;
+
+  final String title;
+
+  final String value;
+
+  const _MiniSummaryCard({
+    required this.icon,
+
+    required this.title,
+
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(17),
+
+      decoration: BoxDecoration(
+        color: Theme.of(
+          context,
+        ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.65),
+
+        borderRadius: BorderRadius.circular(18),
+      ),
+
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(9),
+
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primaryContainer,
+
+              borderRadius: BorderRadius.circular(12),
+            ),
+
+            child: Icon(
+              icon,
+
+              size: 20,
+
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
+            ),
+          ),
+
+          const SizedBox(width: 10),
+
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+
+              children: [
+                Text(
+                  title,
+
+                  style: TextStyle(
+                    fontSize: 12,
+
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+
+                const SizedBox(height: 3),
+
+                Text(
+                  value,
+
+                  maxLines: 1,
+
+                  overflow: TextOverflow.ellipsis,
+
+                  style: const TextStyle(
+                    fontSize: 17,
+
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================
+
+// QUICK ACTION
+
+// ============================================================
+
+class _QuickAction extends StatelessWidget {
+  final IconData icon;
+
+  final String title;
+
+  final String subtitle;
+
+  final VoidCallback onTap;
+
+  const _QuickAction({
+    required this.icon,
+
+    required this.title,
+
+    required this.subtitle,
+
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Theme.of(context).colorScheme.surface,
+
+      borderRadius: BorderRadius.circular(18),
+
+      child: InkWell(
+        onTap: onTap,
+
+        borderRadius: BorderRadius.circular(18),
+
+        child: Container(
+          padding: const EdgeInsets.all(15),
+
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+
+            border: Border.all(
+              color: Theme.of(
+                context,
+              ).colorScheme.outlineVariant.withValues(alpha: 0.55),
+            ),
+          ),
+
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+
+                  borderRadius: BorderRadius.circular(12),
+                ),
+
+                child: Icon(
+                  icon,
+
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+
+                  size: 21,
+                ),
+              ),
+
+              const SizedBox(width: 10),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+
+                  children: [
+                    Text(
+                      title,
+
+                      maxLines: 1,
+
+                      overflow: TextOverflow.ellipsis,
+
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+
+                        fontSize: 13,
+                      ),
+                    ),
+
+                    const SizedBox(height: 3),
+
+                    Text(
+                      subtitle,
+
+                      maxLines: 1,
+
+                      overflow: TextOverflow.ellipsis,
+
+                      style: TextStyle(
+                        fontSize: 11,
+
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+
+// CUSTOMER CARD
+
+// ============================================================
+
+class _CustomerCard extends StatelessWidget {
+  final Customer customer;
+
+  final double balance;
+
+  final VoidCallback onTap;
+
+  final VoidCallback? onPayment;
+
+  final bool showBalance;
+
+  const _CustomerCard({
+    required this.customer,
+
+    required this.balance,
+
+    required this.onTap,
+
+    this.onPayment,
+
+    this.showBalance = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasBalance = balance > 0;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+
+        borderRadius: BorderRadius.circular(20),
+
+        border: Border.all(
+          color: Theme.of(
+            context,
+          ).colorScheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+      ),
+
+      child: InkWell(
+        onTap: onTap,
+
+        borderRadius: BorderRadius.circular(20),
+
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+
+          child: Row(
+            children: [
+              Container(
+                width: 50,
+
+                height: 50,
+
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+
+                  borderRadius: BorderRadius.circular(15),
+                ),
+
+                child: Icon(
+                  Icons.storefront_outlined,
+
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                ),
+              ),
+
+              const SizedBox(width: 13),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+
+                  children: [
+                    Text(
+                      customer.businessName,
+
+                      maxLines: 1,
+
+                      overflow: TextOverflow.ellipsis,
+
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+
+                        fontSize: 15,
+                      ),
+                    ),
+
+                    const SizedBox(height: 5),
+
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.location_on_outlined,
+
+                          size: 14,
+
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+
+                        const SizedBox(width: 3),
+
+                        Expanded(
+                          child: Text(
+                            customer.location,
+
+                            maxLines: 1,
+
+                            overflow: TextOverflow.ellipsis,
+
+                            style: TextStyle(
+                              fontSize: 12,
+
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    if (showBalance) ...[
+                      const SizedBox(height: 8),
+
+                      Row(
+                        children: [
+                          Text(
+                            '₹${balance.toStringAsFixed(2)}',
+
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+
+                              fontSize: 14,
+
+                              color: hasBalance
+                                  ? Theme.of(context).colorScheme.error
+                                  : Colors.green.shade700,
+                            ),
+                          ),
+
+                          const SizedBox(width: 5),
+
+                          Text(
+                            hasBalance ? 'due' : 'paid',
+
+                            style: TextStyle(
+                              fontSize: 11,
+
+                              color: hasBalance
+                                  ? Theme.of(context).colorScheme.error
+                                  : Colors.green.shade700,
+
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
+              const SizedBox(width: 8),
+
+              Column(
+                children: [
+                  const Icon(Icons.chevron_right_rounded),
+
+                  if (onPayment != null)
+                    IconButton(
+                      tooltip: 'Receive payment',
+
+                      visualDensity: VisualDensity.compact,
+
+                      onPressed: onPayment,
+
+                      icon: Icon(
+                        Icons.payments_outlined,
+
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+
+// PAYMENT PREVIEW CARD
 
 // ============================================================
 
@@ -1835,6 +2610,87 @@ class _PaymentPreviewCard extends StatelessWidget {
 // EMPTY STATE
 
 // ============================================================
+
+class _EmptyState extends StatelessWidget {
+  final IconData icon;
+
+  final String title;
+
+  final String subtitle;
+
+  const _EmptyState({
+    required this.icon,
+
+    required this.title,
+
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+
+      padding: const EdgeInsets.all(28),
+
+      decoration: BoxDecoration(
+        color: Theme.of(
+          context,
+        ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+
+        borderRadius: BorderRadius.circular(20),
+      ),
+
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primaryContainer,
+
+              shape: BoxShape.circle,
+            ),
+
+            child: Icon(
+              icon,
+
+              size: 30,
+
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
+            ),
+          ),
+
+          const SizedBox(height: 14),
+
+          Text(
+            title,
+
+            textAlign: TextAlign.center,
+
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+          ),
+
+          const SizedBox(height: 6),
+
+          Text(
+            subtitle,
+
+            textAlign: TextAlign.center,
+
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+
+              height: 1.4,
+
+              fontSize: 13,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 // ============================================================
 

@@ -140,6 +140,52 @@ class BusinessPaymentApp extends StatelessWidget {
 
       colorScheme: colorScheme,
 
+      textTheme: ThemeData.light().textTheme.apply(
+        bodyColor: textPrimary,
+        displayColor: textPrimary,
+      ),
+
+      primaryTextTheme: ThemeData.light().primaryTextTheme.apply(
+        bodyColor: Colors.white,
+        displayColor: Colors.white,
+      ),
+
+      iconTheme: const IconThemeData(color: textSecondary),
+
+      listTileTheme: const ListTileThemeData(
+        textColor: textPrimary,
+        iconColor: textSecondary,
+      ),
+
+      popupMenuTheme: const PopupMenuThemeData(
+        color: surface,
+        textStyle: TextStyle(color: textPrimary),
+      ),
+
+      tooltipTheme: const TooltipThemeData(
+        decoration: BoxDecoration(
+          color: Color(0xFF11152E),
+          borderRadius: BorderRadius.all(Radius.circular(8)),
+        ),
+        textStyle: TextStyle(color: Colors.white),
+      ),
+
+      dataTableTheme: const DataTableThemeData(
+        headingTextStyle: TextStyle(
+          color: textPrimary,
+          fontWeight: FontWeight.w700,
+        ),
+        dataTextStyle: TextStyle(color: textPrimary),
+      ),
+
+      chipTheme: ChipThemeData(
+        backgroundColor: const Color(0xFFF2F3FA),
+        labelStyle: const TextStyle(color: textPrimary),
+        secondaryLabelStyle: const TextStyle(color: textPrimary),
+        side: const BorderSide(color: border),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+
       scaffoldBackgroundColor: background,
 
       appBarTheme: const AppBarTheme(
@@ -174,6 +220,8 @@ class BusinessPaymentApp extends StatelessWidget {
         filled: true,
 
         fillColor: const Color(0xFFF8F8FD),
+
+        floatingLabelBehavior: FloatingLabelBehavior.auto,
 
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
@@ -398,19 +446,19 @@ class BusinessPaymentApp extends StatelessWidget {
 
       onSurface: textPrimary,
 
-      surfaceContainerLowest: const Color(0xFF07100E),
+      surfaceContainerLowest: const Color(0xFF0D1026),
 
-      surfaceContainerLow: const Color(0xFF0C1714),
+      surfaceContainerLow: const Color(0xFF11152E),
 
       surfaceContainer: const Color(0xFF171936),
 
-      surfaceContainerHigh: const Color(0xFF1A2B27),
+      surfaceContainerHigh: const Color(0xFF202544),
 
-      surfaceContainerHighest: const Color(0xFF20332E),
+      surfaceContainerHighest: const Color(0xFF292F50),
 
       onSurfaceVariant: textSecondary,
 
-      outline: const Color(0xFF48615A),
+      outline: const Color(0xFF747B9D),
 
       outlineVariant: border,
 
@@ -429,6 +477,52 @@ class BusinessPaymentApp extends StatelessWidget {
       brightness: Brightness.dark,
 
       colorScheme: colorScheme,
+
+      textTheme: ThemeData.dark().textTheme.apply(
+        bodyColor: textPrimary,
+        displayColor: textPrimary,
+      ),
+
+      primaryTextTheme: ThemeData.dark().primaryTextTheme.apply(
+        bodyColor: textPrimary,
+        displayColor: textPrimary,
+      ),
+
+      iconTheme: const IconThemeData(color: textSecondary),
+
+      listTileTheme: const ListTileThemeData(
+        textColor: textPrimary,
+        iconColor: textSecondary,
+      ),
+
+      popupMenuTheme: const PopupMenuThemeData(
+        color: surface,
+        textStyle: TextStyle(color: textPrimary),
+      ),
+
+      tooltipTheme: const TooltipThemeData(
+        decoration: BoxDecoration(
+          color: Color(0xFF292F50),
+          borderRadius: BorderRadius.all(Radius.circular(8)),
+        ),
+        textStyle: TextStyle(color: textPrimary),
+      ),
+
+      dataTableTheme: const DataTableThemeData(
+        headingTextStyle: TextStyle(
+          color: textPrimary,
+          fontWeight: FontWeight.w700,
+        ),
+        dataTextStyle: TextStyle(color: textPrimary),
+      ),
+
+      chipTheme: ChipThemeData(
+        backgroundColor: const Color(0xFF202544),
+        labelStyle: const TextStyle(color: textPrimary),
+        secondaryLabelStyle: const TextStyle(color: textPrimary),
+        side: const BorderSide(color: border),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
 
       scaffoldBackgroundColor: background,
 
@@ -464,6 +558,8 @@ class BusinessPaymentApp extends StatelessWidget {
         filled: true,
 
         fillColor: const Color(0xFF171936),
+
+        floatingLabelBehavior: FloatingLabelBehavior.auto,
 
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
@@ -503,7 +599,7 @@ class BusinessPaymentApp extends StatelessWidget {
 
         labelStyle: const TextStyle(color: textSecondary),
 
-        hintStyle: const TextStyle(color: Color(0xFF82958F)),
+        hintStyle: const TextStyle(color: Color(0xFFB7BED8)),
 
         prefixIconColor: textSecondary,
 
@@ -516,9 +612,9 @@ class BusinessPaymentApp extends StatelessWidget {
 
           foregroundColor: const Color(0xFF21115A),
 
-          disabledBackgroundColor: const Color(0xFF33443F),
+          disabledBackgroundColor: const Color(0xFF343957),
 
-          disabledForegroundColor: const Color(0xFF91A39D),
+          disabledForegroundColor: const Color(0xFFCFD3E5),
 
           elevation: 0,
 
@@ -619,10 +715,10 @@ class BusinessPaymentApp extends StatelessWidget {
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
 
-        backgroundColor: const Color(0xFFE2F3ED),
+        backgroundColor: const Color(0xFF292F50),
 
         contentTextStyle: const TextStyle(
-          color: Color(0xFF10201C),
+          color: Color(0xFFF2F3FA),
 
           fontSize: 13,
         ),

@@ -27,6 +27,9 @@ class TransactionService {
       LedgerService.customerBalances;
 
   static Future<void> loadTransactions() async {
+    // Load active customers first so payments belonging to deactivated customers
+    // are never shown as orphaned 'Customer' entries in the payment ledger.
+    await CustomerService.loadCustomers();
     isLoading = true;
 
     errorMessage = null;
@@ -64,16 +67,32 @@ class TransactionService {
 
             payment_method_note,
 
-            is_bounced,
-
-            profiles (
-
-              name
-
-            )
+            is_bounced
 
           ''')
           .order('transaction_date', ascending: false);
+
+      final userIds = response
+          .map((row) => row['user_id']?.toString())
+          .whereType<String>()
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+      final profilesById = <String, Map<String, dynamic>>{};
+      if (userIds.isNotEmpty) {
+        try {
+          final profiles = await _supabase
+              .from('profiles')
+              .select('id, name, role')
+              .inFilter('id', userIds);
+          for (final profile in profiles) {
+            profilesById[profile['id'].toString()] =
+                Map<String, dynamic>.from(profile);
+          }
+        } catch (error) {
+          debugPrint('Could not load payment entry profiles: $error');
+        }
+      }
 
       transactions.clear();
 
@@ -81,12 +100,16 @@ class TransactionService {
         final customerId = row['customer_id'] as String;
 
         final customer = CustomerService.getCustomerById(customerId);
+        // Inactive/deleted customers are excluded from all payment screens.
+        if (customer == null) continue;
 
-        final profile = row['profiles'];
-
-        final receivedBy = profile is Map
-            ? profile['name']?.toString() ?? 'Unknown'
-            : 'Unknown';
+        final userId = row['user_id']?.toString();
+        final profile = userId == null ? null : profilesById[userId];
+        final role = _paymentEntryRole(profile?['role']?.toString());
+        final name = profile?['name']?.toString().trim();
+        final receivedBy = name == null || name.isEmpty
+            ? role
+            : '$role • $name';
 
         final amount = (row['amount'] as num).toDouble();
 
@@ -212,11 +235,15 @@ class TransactionService {
           ? null
           : await _supabase
                 .from('profiles')
-                .select('name')
+                .select('name, role')
                 .eq('id', currentUser.id)
                 .maybeSingle();
 
-      final receivedBy = currentProfile?['name']?.toString() ?? 'Unknown';
+      final role = _paymentEntryRole(currentProfile?['role']?.toString());
+      final name = currentProfile?['name']?.toString().trim();
+      final receivedBy = name == null || name.isEmpty
+          ? role
+          : '$role • $name';
 
       transactions.insert(
         0,
@@ -264,6 +291,62 @@ class TransactionService {
 
       dataVersion.value++;
 
+      return false;
+    }
+  }
+
+  static String _paymentEntryRole(String? role) {
+    switch (role?.trim().toLowerCase()) {
+      case 'owner':
+        return 'Owner';
+      case 'salesman':
+      case 'salesperson':
+        return 'Salesman';
+      default:
+        return 'Unknown';
+    }
+  }
+
+  /// Updates editable fields for an existing received payment.
+  /// The database remains the source of truth for balances; reload the ledger
+  /// after the update so summary cards and customer balances stay in sync.
+  static Future<bool> updatePayment({
+    required String paymentId,
+    required double amount,
+    required double discount,
+    required String notes,
+    required String paymentMethod,
+    required String paymentMethodNote,
+    required DateTime transactionDate,
+  }) async {
+    errorMessage = null;
+    if (amount <= 0 || discount < 0 || discount >= amount) {
+      errorMessage =
+          'Amount must be positive and discount must be less than amount.';
+      return false;
+    }
+    try {
+      await _supabase
+          .from('payments')
+          .update({
+            'amount': amount,
+            'discount': discount,
+            'amount_received': amount - discount,
+            'notes': notes.trim().isEmpty ? null : notes.trim(),
+            'payment_method': paymentMethod,
+            'payment_method_note': paymentMethodNote.trim().isEmpty
+                ? null
+                : paymentMethodNote.trim(),
+            'transaction_date': transactionDate.toIso8601String(),
+          })
+          .eq('id', paymentId);
+      await loadTransactions();
+      await loadCustomerBalances();
+      dataVersion.value++;
+      return true;
+    } catch (error) {
+      errorMessage = error.toString();
+      dataVersion.value++;
       return false;
     }
   }

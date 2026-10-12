@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../services/indian_currency_input_formatter.dart';
 
 class AddCustomerScreen extends StatefulWidget {
   const AddCustomerScreen({super.key});
@@ -38,9 +40,12 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
     final phone = phoneController.text.trim();
 
     final openingBalance =
-        double.tryParse(openingBalanceController.text.trim()) ?? 0;
+        double.tryParse(
+          openingBalanceController.text.trim().replaceAll(',', ''),
+        ) ??
+        0;
 
-    if (businessName.isEmpty || location.isEmpty || phone.isEmpty) {
+    if (businessName.isEmpty || location.isEmpty) {
       _showMessage('Please fill in all required fields.');
       return;
     }
@@ -50,7 +55,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
       return;
     }
 
-    if (phone.length != 10) {
+    if (phone.isNotEmpty && phone.length != 10) {
       _showMessage('Please enter a valid 10-digit phone number.');
       return;
     }
@@ -246,7 +251,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
 
                 _FormField(
                   controller: phoneController,
-                  label: 'Phone Number',
+                  label: 'Phone Number (Optional)',
                   hint: 'e.g. 9876543210',
                   icon: Icons.phone_outlined,
                   keyboardType: TextInputType.phone,
@@ -280,6 +285,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
+                  inputFormatters: const [IndianCurrencyInputFormatter()],
                   prefixText: '₹ ',
                 ),
 
@@ -371,6 +377,7 @@ class _FormField extends StatelessWidget {
   final TextCapitalization textCapitalization;
   final int? maxLength;
   final String? prefixText;
+  final List<TextInputFormatter>? inputFormatters;
 
   const _FormField({
     required this.controller,
@@ -381,6 +388,7 @@ class _FormField extends StatelessWidget {
     this.textCapitalization = TextCapitalization.none,
     this.maxLength,
     this.prefixText,
+    this.inputFormatters,
   });
 
   @override
@@ -390,6 +398,7 @@ class _FormField extends StatelessWidget {
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
       textCapitalization: textCapitalization,
       maxLength: maxLength,
       decoration: InputDecoration(

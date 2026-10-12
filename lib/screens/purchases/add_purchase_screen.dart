@@ -3,6 +3,7 @@ import '../../models/customer.dart';
 import '../../services/customer_service.dart';
 import '../../services/transaction_service.dart';
 import '../../services/purchase_service.dart';
+import '../../services/currency_formatter.dart';
 
 class AddPurchaseScreen extends StatefulWidget {
   final Customer? initialCustomer;
@@ -115,8 +116,8 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
       context: context,
       initialDate: _selectedDate,
       firstDate: DateTime(2000),
-      lastDate: DateTime(today.year, today.month, today.day),
-      helpText: 'Select purchase date',
+      lastDate: DateTime(2100, 12, 31),
+      helpText: 'Select sale date',
     );
 
     if (picked == null || !mounted) {
@@ -174,7 +175,7 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
         return;
       }
 
-      _showMessage('Purchase added successfully.');
+      _showMessage('Sale added successfully.');
 
       Navigator.pop(context, true);
     } catch (error) {
@@ -196,7 +197,7 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
     final message = error.toString();
 
     if (message.contains('Only an owner can record a purchase')) {
-      return 'Only an owner can add purchases.';
+      return 'Only an owner can add sales.';
     }
 
     if (message.contains('Customer was not found')) {
@@ -204,10 +205,10 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
     }
 
     if (message.contains('Purchase amount must be greater than zero')) {
-      return 'Purchase amount must be greater than zero.';
+      return 'Sale amount must be greater than zero.';
     }
 
-    return 'Could not save the purchase. Please try again.';
+    return 'Could not save the sale. Please try again.';
   }
 
   void _showMessage(String message, {bool isError = false}) {
@@ -237,7 +238,7 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
 
       appBar: AppBar(
         title: const Text(
-          'New Purchase',
+          'New Sale',
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
       ),
@@ -287,7 +288,7 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'New Purchase',
+                                'New Sale',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 22,
@@ -296,7 +297,7 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
                               ),
                               SizedBox(height: 5),
                               Text(
-                                'Add a new purchase to the customer account.',
+                                'Record a new sale for this customer.',
                                 style: TextStyle(
                                   color: Colors.white70,
                                   fontSize: 13,
@@ -475,7 +476,7 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
                                         ),
                                       )
                                     : Text(
-                                        '₹${_currentBalance.toStringAsFixed(2)}',
+                                        '${CurrencyFormatter.rupees(_currentBalance)}',
                                         style: TextStyle(
                                           fontSize: 25,
                                           fontWeight: FontWeight.w800,
@@ -493,14 +494,14 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
                   const SizedBox(height: 28),
 
                   const Text(
-                    'Purchase Details',
+                    'Sale Details',
                     style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
                   ),
 
                   const SizedBox(height: 6),
 
                   Text(
-                    'Enter the amount of the new purchase.',
+                    'Enter the amount of the new sale.',
                     style: TextStyle(
                       fontSize: 13,
                       color: colorScheme.onSurfaceVariant,
@@ -520,7 +521,7 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
                       fontWeight: FontWeight.w700,
                     ),
                     decoration: InputDecoration(
-                      labelText: 'Purchase Amount',
+                      labelText: 'Sale Amount',
                       hintText: '0.00',
                       prefixText: '₹ ',
                       prefixIcon: const Icon(Icons.payments_outlined),
@@ -553,7 +554,7 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
                     borderRadius: BorderRadius.circular(16),
                     child: InputDecorator(
                       decoration: InputDecoration(
-                        labelText: 'Purchase Date',
+                        labelText: 'Sale Date',
                         prefixIcon: const Icon(Icons.calendar_today_outlined),
                         filled: true,
                         fillColor: colorScheme.surfaceContainerHighest,
@@ -587,7 +588,7 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
                     textCapitalization: TextCapitalization.sentences,
                     decoration: InputDecoration(
                       labelText: 'Note',
-                      hintText: 'Optional note about this purchase',
+                      hintText: 'Optional note about this sale',
                       prefixIcon: const Padding(
                         padding: EdgeInsets.only(bottom: 42),
                         child: Icon(Icons.notes_outlined),
@@ -635,7 +636,7 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'This purchase will increase the customer\'s outstanding balance.',
+                            'This sale will increase the customer\'s outstanding balance.',
                             style: TextStyle(
                               fontSize: 12,
                               height: 1.4,
@@ -668,7 +669,7 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
                             )
                           : const Icon(Icons.add_shopping_cart_rounded),
                       label: Text(
-                        _isSaving ? 'Saving Purchase...' : 'Add Purchase',
+                        _isSaving ? 'Saving Sale...' : 'Add Sale',
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,

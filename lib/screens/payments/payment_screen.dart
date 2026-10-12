@@ -13,6 +13,7 @@ import '../../models/transaction.dart';
 import '../../services/customer_service.dart';
 
 import '../../services/transaction_service.dart';
+import '../../services/currency_formatter.dart';
 
 class PaymentScreen extends StatefulWidget {
   final Customer customer;
@@ -356,7 +357,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
         return;
       }
 
-      _showMessage('Payment saved. ₹${received.toStringAsFixed(2)} received.');
+      _showMessage(
+        'Payment saved. ${CurrencyFormatter.rupees(received)} received.',
+      );
 
       Navigator.pop(context, true);
     } catch (error) {
@@ -679,10 +682,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     ),
                     child: Column(
                       children: [
-                        const Text(
+                        Text(
                           'Current Amount Due',
                           style: TextStyle(
-                            color: Colors.black,
+                            color: Colors.white,
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
                           ),
@@ -694,13 +697,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                 height: 27,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2.5,
-                                  color: Colors.black,
+                                  color: Colors.white,
                                 ),
                               )
                             : Text(
-                                '₹${_currentBalance.toStringAsFixed(2)}',
+                                '${CurrencyFormatter.rupees(_currentBalance)}',
                                 style: const TextStyle(
-                                  color: Colors.black,
+                                  color: Colors.white,
                                   fontSize: 31,
                                   fontWeight: FontWeight.w800,
                                 ),
@@ -817,12 +820,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       children: [
                         _SummaryRow(
                           label: 'Amount to settle',
-                          value: '₹${_settlementAmount.toStringAsFixed(2)}',
+                          value:
+                              '${CurrencyFormatter.rupees(_settlementAmount)}',
                         ),
                         const SizedBox(height: 11),
                         _SummaryRow(
                           label: 'Discount',
-                          value: '₹${_discount.toStringAsFixed(2)}',
+                          value: '${CurrencyFormatter.rupees(_discount)}',
                         ),
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 5),
@@ -830,14 +834,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         ),
                         _SummaryRow(
                           label: 'Amount actually received',
-                          value: '₹${received.toStringAsFixed(2)}',
+                          value: '${CurrencyFormatter.rupees(received)}',
                           bold: true,
                           valueColor: emerald,
                         ),
                         const SizedBox(height: 11),
                         _SummaryRow(
                           label: 'Remaining balance',
-                          value: '₹${remaining.toStringAsFixed(2)}',
+                          value: '${CurrencyFormatter.rupees(remaining)}',
                           bold: true,
                         ),
                       ],
@@ -940,7 +944,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                               width: 20,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                color: Colors.black,
+                                color: Colors.white,
                               ),
                             )
                           : const Icon(Icons.check_rounded),
@@ -953,7 +957,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       ),
                       style: FilledButton.styleFrom(
                         backgroundColor: emerald,
-                        foregroundColor: Colors.black,
+                        foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(15),
                         ),

@@ -7,13 +7,37 @@ import '../models/transaction.dart';
 class PaymentService {
   static final SupabaseClient _supabase = Supabase.instance.client;
 
+  /// Ensures the supplied customer is a real customer record before writing.
+  static Future<void> _validateCustomer(String customerId) async {
+    final normalizedId = customerId.trim();
+
+    if (normalizedId.isEmpty ||
+        normalizedId.toLowerCase() == 'customer' ||
+        normalizedId.toLowerCase() == 'null') {
+      throw Exception(
+        'Please select a valid customer before saving the payment.',
+      );
+    }
+
+    final customer = await _supabase
+        .from('customers')
+        .select('id')
+        .eq('id', normalizedId)
+        .maybeSingle();
+
+    if (customer == null) {
+      throw Exception(
+        'The selected customer was not found. Please select a customer from the customer list.',
+      );
+    }
+  }
+
   /// Records a payment using the secure Supabase RPC.
   ///
   /// [amount] is the amount being settled from the customer's balance.
   /// [discount] is the amount forgiven.
   /// The actual money received is calculated by the database:
-  ///
-  /// amount received = amount - discount
+  /// amount received = amount - discount.
   static Future<PaymentTransaction?> recordPayment({
     required String customerId,
     required String customerName,
@@ -32,34 +56,53 @@ class PaymentService {
       throw Exception('You are not logged in.');
     }
 
-    if (signaturePath.isEmpty) {
+    if (customerName.trim().isEmpty ||
+        customerName.trim().toLowerCase() == 'customer') {
+      throw Exception(
+        'Please select a valid customer before saving the payment.',
+      );
+    }
+
+    await _validateCustomer(customerId);
+
+    if (amount <= 0) {
+      throw Exception('Payment amount must be greater than zero.');
+    }
+
+    if (discount < 0 || discount >= amount) {
+      throw Exception(
+        'Discount must be zero or greater and less than the settlement amount.',
+      );
+    }
+
+    if (signaturePath.trim().isEmpty) {
       throw Exception('Signature path is missing.');
     }
 
     final response = await _supabase.rpc(
       'record_payment',
       params: {
-        'p_customer_id': customerId,
+        'p_customer_id': customerId.trim(),
         'p_amount': amount,
         'p_discount': discount,
-        'p_notes': notes.isEmpty ? null : notes,
+        'p_notes': notes.trim().isEmpty ? null : notes.trim(),
         'p_signature_path': signaturePath,
         'p_transaction_date': transactionDate.toIso8601String(),
-        // The Supabase record_payment function must accept and save these
-        // parameters. Its SQL definition will need to be updated accordingly.
         'p_payment_method': paymentMethod,
-        'p_payment_method_note': paymentMethodNote.isEmpty
+        'p_payment_method_note': paymentMethodNote.trim().isEmpty
             ? null
-            : paymentMethodNote,
+            : paymentMethodNote.trim(),
       },
     );
+
+    if (response == null) {
+      throw Exception('Payment could not be recorded.');
+    }
 
     final inserted = Map<String, dynamic>.from(response as Map);
 
     final savedAmount = (inserted['amount'] as num).toDouble();
-
     final savedDiscount = (inserted['discount'] as num?)?.toDouble() ?? 0;
-
     final savedAmountReceived =
         (inserted['amount_received'] as num?)?.toDouble() ??
         (savedAmount - savedDiscount);
@@ -67,7 +110,7 @@ class PaymentService {
     return PaymentTransaction(
       id: inserted['id'] as String,
       customerId: inserted['customer_id'] as String,
-      customerName: customerName,
+      customerName: customerName.trim(),
       amount: savedAmount,
       discount: savedDiscount,
       amountReceived: savedAmountReceived,

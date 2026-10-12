@@ -8,6 +8,8 @@ import '../../services/customer_service.dart';
 
 import '../../services/transaction_service.dart';
 
+import '../../services/currency_formatter.dart';
+
 class OwnerReportsScreen extends StatelessWidget {
   const OwnerReportsScreen({super.key});
 
@@ -45,11 +47,15 @@ class _ReportsContentState extends State<_ReportsContent> {
 
   @override
   Widget build(BuildContext context) {
-    final transactions = List<PaymentTransaction>.from(
-      TransactionService.transactions,
-    );
-
     final customers = CustomerService.customers;
+
+    final activeCustomerIds = customers.map((customer) => customer.id).toSet();
+
+    final transactions = TransactionService.transactions
+        .where(
+          (transaction) => activeCustomerIds.contains(transaction.customerId),
+        )
+        .toList(growable: false);
 
     final chartData = _buildChartData(transactions, _selectedPeriod);
 
@@ -86,54 +92,68 @@ class _ReportsContentState extends State<_ReportsContent> {
     });
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F6FC),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
 
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _refreshData,
 
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 600;
 
-            children: [
-              _buildHeader(context),
+              return ListView(
+                padding: EdgeInsets.fromLTRB(
+                  compact ? 12 : 24,
 
-              const SizedBox(height: 24),
+                  compact ? 14 : 24,
 
-              _buildSummaryCards(
-                totalCollected: totalCollected,
+                  compact ? 12 : 24,
 
-                totalPayments: totalPayments,
+                  40,
+                ),
 
-                averagePayment: averagePayment,
+                children: [
+                  _buildHeader(context),
 
-                outstanding: outstanding,
-              ),
+                  const SizedBox(height: 24),
 
-              const SizedBox(height: 28),
+                  _buildSummaryCards(
+                    totalCollected: totalCollected,
 
-              _buildCollectionChart(chartData),
+                    totalPayments: totalPayments,
 
-              const SizedBox(height: 24),
+                    averagePayment: averagePayment,
 
-              _buildTodayCard(todayCollected, todayPayments),
+                    outstanding: outstanding,
+                  ),
 
-              const SizedBox(height: 24),
+                  const SizedBox(height: 28),
 
-              _buildPaymentActivity(transactions),
+                  _buildCollectionChart(chartData),
 
-              const SizedBox(height: 24),
+                  const SizedBox(height: 24),
 
-              _buildTopCustomers(topCustomers),
+                  _buildTodayCard(todayCollected, todayPayments),
 
-              const SizedBox(height: 24),
+                  const SizedBox(height: 24),
 
-              _buildOutstandingCustomers(outstandingCustomers),
+                  _buildPaymentActivity(transactions),
 
-              const SizedBox(height: 24),
+                  const SizedBox(height: 24),
 
-              _buildRecentPayments(transactions),
-            ],
+                  _buildTopCustomers(topCustomers),
+
+                  const SizedBox(height: 24),
+
+                  _buildOutstandingCustomers(outstandingCustomers),
+
+                  const SizedBox(height: 24),
+
+                  _buildRecentPayments(transactions),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -150,7 +170,7 @@ class _ReportsContentState extends State<_ReportsContent> {
             crossAxisAlignment: CrossAxisAlignment.start,
 
             children: [
-              const Text(
+              Text(
                 'Business Reports',
 
                 style: TextStyle(
@@ -158,7 +178,7 @@ class _ReportsContentState extends State<_ReportsContent> {
 
                   fontWeight: FontWeight.w800,
 
-                  color: Color(0xFF171936),
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
 
@@ -167,7 +187,11 @@ class _ReportsContentState extends State<_ReportsContent> {
               Text(
                 'Track collections, payments and outstanding balances.',
 
-                style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                style: TextStyle(
+                  fontSize: 14,
+
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -178,7 +202,10 @@ class _ReportsContentState extends State<_ReportsContent> {
 
           onPressed: _refreshData,
 
-          icon: const Icon(Icons.refresh_rounded, color: Color(0xFF4F2BCB)),
+          icon: Icon(
+            Icons.refresh_rounded,
+            color: Theme.of(context).colorScheme.primary,
+          ),
         ),
       ],
     );
@@ -205,9 +232,9 @@ class _ReportsContentState extends State<_ReportsContent> {
 
             icon: Icons.account_balance_wallet_rounded,
 
-            iconColor: const Color(0xFF4F2BCB),
+            iconColor: const Color(0xFF087F6A),
 
-            backgroundColor: const Color(0xFFEAE5FF),
+            backgroundColor: const Color(0xFFE4F5F0),
           ),
 
           _SummaryCard(
@@ -217,9 +244,9 @@ class _ReportsContentState extends State<_ReportsContent> {
 
             icon: Icons.receipt_long_rounded,
 
-            iconColor: const Color(0xFF4F2BCB),
+            iconColor: const Color(0xFF2563EB),
 
-            backgroundColor: const Color(0xFFEAE5FF),
+            backgroundColor: const Color(0xFFE8F0FF),
           ),
 
           _SummaryCard(
@@ -229,9 +256,9 @@ class _ReportsContentState extends State<_ReportsContent> {
 
             icon: Icons.payments_rounded,
 
-            iconColor: const Color(0xFF4F2BCB),
+            iconColor: const Color(0xFF7C3AED),
 
-            backgroundColor: const Color(0xFFEAE5FF),
+            backgroundColor: const Color(0xFFF0E9FF),
           ),
 
           _SummaryCard(
@@ -274,14 +301,14 @@ class _ReportsContentState extends State<_ReportsContent> {
 
           itemCount: cards.length,
 
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 2,
 
-            crossAxisSpacing: 14,
+            crossAxisSpacing: 10,
 
-            mainAxisSpacing: 14,
+            mainAxisSpacing: 10,
 
-            childAspectRatio: 1.8,
+            childAspectRatio: constraints.maxWidth < 380 ? 1.35 : 1.55,
           ),
 
           itemBuilder: (context, index) {
@@ -296,18 +323,18 @@ class _ReportsContentState extends State<_ReportsContent> {
     final total = points.fold<double>(0, (sum, point) => sum + point.value);
 
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 600 ? 14 : 24),
 
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
 
         borderRadius: BorderRadius.circular(20),
 
-        border: Border.all(color: const Color(0xFFE5E7F2)),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
 
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.035),
+            color: Colors.black.withOpacity(0.035),
 
             blurRadius: 18,
 
@@ -329,7 +356,7 @@ class _ReportsContentState extends State<_ReportsContent> {
                   crossAxisAlignment: CrossAxisAlignment.start,
 
                   children: [
-                    const Text(
+                    Text(
                       'Collection Overview',
 
                       style: TextStyle(
@@ -337,7 +364,7 @@ class _ReportsContentState extends State<_ReportsContent> {
 
                         fontWeight: FontWeight.w800,
 
-                        color: Color(0xFF171936),
+                        color: Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
 
@@ -349,7 +376,7 @@ class _ReportsContentState extends State<_ReportsContent> {
                       style: TextStyle(
                         fontSize: 13,
 
-                        color: Colors.grey.shade600,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -360,12 +387,16 @@ class _ReportsContentState extends State<_ReportsContent> {
                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 5),
 
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF2F3FA),
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
 
                   borderRadius: BorderRadius.circular(12),
                 ),
 
-                child: Row(
+                child: Wrap(
+                  spacing: 2,
+
+                  runSpacing: 2,
+
                   children: [
                     _periodButton('7 Days'),
 
@@ -388,7 +419,9 @@ class _ReportsContentState extends State<_ReportsContent> {
                 height: 42,
 
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEAE5FF),
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? Theme.of(context).colorScheme.surfaceContainerHigh
+                      : const Color(0xFFE4F5F0),
 
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -396,7 +429,7 @@ class _ReportsContentState extends State<_ReportsContent> {
                 child: const Icon(
                   Icons.trending_up_rounded,
 
-                  color: Color(0xFF4F2BCB),
+                  color: Color(0xFF087F6A),
                 ),
               ),
 
@@ -409,19 +442,23 @@ class _ReportsContentState extends State<_ReportsContent> {
                   Text(
                     _formatMoney(total),
 
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 21,
 
                       fontWeight: FontWeight.w800,
 
-                      color: Color(0xFF171936),
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
 
                   Text(
                     'Collected in $_selectedPeriod',
 
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    style: TextStyle(
+                      fontSize: 12,
+
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),
@@ -437,7 +474,16 @@ class _ReportsContentState extends State<_ReportsContent> {
 
             child: points.isEmpty
                 ? _buildEmptyChart()
-                : CustomPaint(painter: _CollectionChartPainter(points: points)),
+                : CustomPaint(
+                    painter: _CollectionChartPainter(
+                      points: points,
+                      lineColor: Theme.of(context).colorScheme.primary,
+                      gridColor: Theme.of(context).colorScheme.outlineVariant,
+                      labelColor: Theme.of(
+                        context,
+                      ).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
           ),
         ],
       ),
@@ -457,10 +503,16 @@ class _ReportsContentState extends State<_ReportsContent> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
 
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: EdgeInsets.symmetric(
+          horizontal: MediaQuery.sizeOf(context).width < 600 ? 7 : 12,
+
+          vertical: 8,
+        ),
 
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFF4F2BCB) : Colors.transparent,
+          color: selected
+              ? Theme.of(context).colorScheme.primary
+              : Colors.transparent,
 
           borderRadius: BorderRadius.circular(9),
         ),
@@ -473,7 +525,9 @@ class _ReportsContentState extends State<_ReportsContent> {
 
             fontWeight: FontWeight.w700,
 
-            color: selected ? Colors.white : const Color(0xFF68708B),
+            color: selected
+                ? Theme.of(context).colorScheme.onPrimary
+                : Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ),
       ),
@@ -494,7 +548,7 @@ class _ReportsContentState extends State<_ReportsContent> {
             'No payment data for this period',
 
             style: TextStyle(
-              color: Colors.grey.shade500,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
 
               fontWeight: FontWeight.w600,
             ),
@@ -510,14 +564,14 @@ class _ReportsContentState extends State<_ReportsContent> {
 
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF4F2BCB), Color(0xFF4F2BCB)],
+          colors: [Color(0xFF087F6A), Color(0xFF0B927A)],
         ),
 
         borderRadius: BorderRadius.circular(20),
 
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF4F2BCB).withValues(alpha: 0.20),
+            color: const Color(0xFF087F6A).withOpacity(0.20),
 
             blurRadius: 20,
 
@@ -534,7 +588,7 @@ class _ReportsContentState extends State<_ReportsContent> {
             height: 52,
 
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.16),
+              color: Colors.white.withOpacity(0.16),
 
               borderRadius: BorderRadius.circular(15),
             ),
@@ -555,7 +609,7 @@ class _ReportsContentState extends State<_ReportsContent> {
               crossAxisAlignment: CrossAxisAlignment.start,
 
               children: [
-                const Text(
+                Text(
                   "Today's Collection",
 
                   style: TextStyle(
@@ -572,7 +626,7 @@ class _ReportsContentState extends State<_ReportsContent> {
                 Text(
                   _formatMoney(amount),
 
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Colors.white,
 
                     fontSize: 25,
@@ -588,7 +642,7 @@ class _ReportsContentState extends State<_ReportsContent> {
             padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
 
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.13),
+              color: Colors.white.withOpacity(0.13),
 
               borderRadius: BorderRadius.circular(12),
             ),
@@ -598,7 +652,7 @@ class _ReportsContentState extends State<_ReportsContent> {
                 Text(
                   payments.toString(),
 
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Colors.white,
 
                     fontSize: 18,
@@ -607,7 +661,7 @@ class _ReportsContentState extends State<_ReportsContent> {
                   ),
                 ),
 
-                const Text(
+                Text(
                   'Payments',
 
                   style: TextStyle(color: Colors.white70, fontSize: 11),
@@ -674,7 +728,13 @@ class _ReportsContentState extends State<_ReportsContent> {
             ),
           ),
 
-          Container(width: 1, height: 65, color: const Color(0xFFE7E8F4)),
+          Container(
+            width: 1,
+
+            height: 65,
+
+            color: Theme.of(context).colorScheme.outlineVariant,
+          ),
 
           Expanded(
             child: _activityItem(
@@ -688,7 +748,13 @@ class _ReportsContentState extends State<_ReportsContent> {
             ),
           ),
 
-          Container(width: 1, height: 65, color: const Color(0xFFE7E8F4)),
+          Container(
+            width: 1,
+
+            height: 65,
+
+            color: Theme.of(context).colorScheme.outlineVariant,
+          ),
 
           Expanded(
             child: _activityItem(
@@ -726,19 +792,19 @@ class _ReportsContentState extends State<_ReportsContent> {
 
       child: Column(
         children: [
-          Icon(icon, color: const Color(0xFF4F2BCB), size: 23),
+          Icon(icon, color: const Color(0xFF087F6A), size: 23),
 
           const SizedBox(height: 8),
 
           Text(
             value,
 
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 18,
 
               fontWeight: FontWeight.w800,
 
-              color: Color(0xFF171936),
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
 
@@ -747,7 +813,11 @@ class _ReportsContentState extends State<_ReportsContent> {
           Text(
             subtitle,
 
-            style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+            style: TextStyle(
+              fontSize: 11,
+
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),
@@ -799,8 +869,10 @@ class _ReportsContentState extends State<_ReportsContent> {
 
             decoration: BoxDecoration(
               color: rank == 1
-                  ? const Color(0xFFEAE5FF)
-                  : const Color(0xFFF5F6FC),
+                  ? (Theme.of(context).brightness == Brightness.dark
+                        ? Theme.of(context).colorScheme.surfaceContainerHigh
+                        : const Color(0xFFE4F5F0))
+                  : Theme.of(context).colorScheme.surfaceContainerHighest,
 
               borderRadius: BorderRadius.circular(10),
             ),
@@ -812,8 +884,8 @@ class _ReportsContentState extends State<_ReportsContent> {
                 fontWeight: FontWeight.w800,
 
                 color: rank == 1
-                    ? const Color(0xFF4F2BCB)
-                    : const Color(0xFF68708B),
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -824,12 +896,12 @@ class _ReportsContentState extends State<_ReportsContent> {
             child: Text(
               customer.name,
 
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14,
 
                 fontWeight: FontWeight.w700,
 
-                color: Color(0xFF25284A),
+                color: Theme.of(context).colorScheme.onSurface,
               ),
 
               overflow: TextOverflow.ellipsis,
@@ -843,19 +915,23 @@ class _ReportsContentState extends State<_ReportsContent> {
               Text(
                 _formatMoney(customer.totalPaid),
 
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
 
                   fontWeight: FontWeight.w800,
 
-                  color: Color(0xFF4F2BCB),
+                  color: Color(0xFF087F6A),
                 ),
               ),
 
               Text(
                 '${customer.paymentCount} payments',
 
-                style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                style: TextStyle(
+                  fontSize: 10,
+
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -889,7 +965,11 @@ class _ReportsContentState extends State<_ReportsContent> {
                         height: 40,
 
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFFEEE4),
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? Theme.of(
+                                  context,
+                                ).colorScheme.surfaceContainerHigh
+                              : const Color(0xFFFFEEE4),
 
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -909,12 +989,12 @@ class _ReportsContentState extends State<_ReportsContent> {
                         child: Text(
                           customer.businessName,
 
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.w700,
 
                             fontSize: 14,
 
-                            color: Color(0xFF25284A),
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
 
                           overflow: TextOverflow.ellipsis,
@@ -924,7 +1004,7 @@ class _ReportsContentState extends State<_ReportsContent> {
                       Text(
                         _formatMoney(balance),
 
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w800,
 
                           fontSize: 14,
@@ -970,7 +1050,9 @@ class _ReportsContentState extends State<_ReportsContent> {
             height: 42,
 
             decoration: BoxDecoration(
-              color: const Color(0xFFEAE5FF),
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? Theme.of(context).colorScheme.surfaceContainerHigh
+                  : const Color(0xFFE4F5F0),
 
               borderRadius: BorderRadius.circular(12),
             ),
@@ -978,7 +1060,7 @@ class _ReportsContentState extends State<_ReportsContent> {
             child: const Icon(
               Icons.arrow_downward_rounded,
 
-              color: Color(0xFF4F2BCB),
+              color: Color(0xFF087F6A),
             ),
           ),
 
@@ -992,12 +1074,12 @@ class _ReportsContentState extends State<_ReportsContent> {
                 Text(
                   transaction.customerName,
 
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
 
                     fontSize: 14,
 
-                    color: Color(0xFF25284A),
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
 
                   overflow: TextOverflow.ellipsis,
@@ -1008,7 +1090,11 @@ class _ReportsContentState extends State<_ReportsContent> {
                 Text(
                   _formatDate(transaction.transactionDate),
 
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                  style: TextStyle(
+                    fontSize: 11,
+
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -1017,12 +1103,12 @@ class _ReportsContentState extends State<_ReportsContent> {
           Text(
             '+ ${_formatMoney(transaction.amountReceived)}',
 
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 14,
 
               fontWeight: FontWeight.w800,
 
-              color: Color(0xFF4F2BCB),
+              color: Color(0xFF087F6A),
             ),
           ),
         ],
@@ -1041,15 +1127,15 @@ class _ReportsContentState extends State<_ReportsContent> {
       padding: const EdgeInsets.all(22),
 
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
 
         borderRadius: BorderRadius.circular(20),
 
-        border: Border.all(color: const Color(0xFFE5E7F2)),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
 
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.025),
+            color: Colors.black.withOpacity(0.025),
 
             blurRadius: 16,
 
@@ -1065,12 +1151,12 @@ class _ReportsContentState extends State<_ReportsContent> {
           Text(
             title,
 
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 19,
 
               fontWeight: FontWeight.w800,
 
-              color: Color(0xFF171936),
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
 
@@ -1079,7 +1165,11 @@ class _ReportsContentState extends State<_ReportsContent> {
           Text(
             subtitle,
 
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            style: TextStyle(
+              fontSize: 12,
+
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
 
           const SizedBox(height: 18),
@@ -1100,7 +1190,11 @@ class _ReportsContentState extends State<_ReportsContent> {
         child: Text(
           message,
 
-          style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+
+            fontSize: 13,
+          ),
         ),
       ),
     );
@@ -1247,7 +1341,7 @@ class _ReportsContentState extends State<_ReportsContent> {
   }
 
   String _formatMoney(double amount) {
-    return '₹${amount.toStringAsFixed(2)}';
+    return CurrencyFormatter.rupees(amount);
   }
 
   String _shortDate(DateTime date) {
@@ -1370,11 +1464,11 @@ class _SummaryCard extends StatelessWidget {
       padding: const EdgeInsets.all(18),
 
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
 
         borderRadius: BorderRadius.circular(18),
 
-        border: Border.all(color: const Color(0xFFE5E7F2)),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
       ),
 
       child: Row(
@@ -1385,7 +1479,9 @@ class _SummaryCard extends StatelessWidget {
             height: 46,
 
             decoration: BoxDecoration(
-              color: backgroundColor,
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? Theme.of(context).colorScheme.surfaceContainerHigh
+                  : backgroundColor,
 
               borderRadius: BorderRadius.circular(13),
             ),
@@ -1406,7 +1502,7 @@ class _SummaryCard extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 11,
 
-                    color: Colors.grey.shade600,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
 
                     fontWeight: FontWeight.w600,
                   ),
@@ -1417,12 +1513,12 @@ class _SummaryCard extends StatelessWidget {
                 Text(
                   value,
 
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 18,
 
                     fontWeight: FontWeight.w800,
 
-                    color: Color(0xFF171936),
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
 
                   overflow: TextOverflow.ellipsis,
@@ -1462,8 +1558,16 @@ class _CustomerPaymentSummary {
 
 class _CollectionChartPainter extends CustomPainter {
   final List<_ChartPoint> points;
+  final Color lineColor;
+  final Color gridColor;
+  final Color labelColor;
 
-  _CollectionChartPainter({required this.points});
+  _CollectionChartPainter({
+    required this.points,
+    required this.lineColor,
+    required this.gridColor,
+    required this.labelColor,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1490,28 +1594,28 @@ class _CollectionChartPainter extends CustomPainter {
     final safeMax = maxValue <= 0 ? 100.0 : maxValue;
 
     final paintGrid = Paint()
-      ..color = const Color(0xFFEDEEFF)
+      ..color = gridColor
       ..strokeWidth = 1;
 
     final paintLine = Paint()
-      ..color = const Color(0xFF4F2BCB)
+      ..color = lineColor
       ..strokeWidth = 3
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
 
     final paintArea = Paint()
-      ..color = const Color(0xFF4F2BCB).withValues(alpha: 0.08)
+      ..color = lineColor.withValues(alpha: 0.12)
       ..style = PaintingStyle.fill;
 
     final paintDot = Paint()
-      ..color = const Color(0xFF4F2BCB)
+      ..color = lineColor
       ..style = PaintingStyle.fill;
 
-    final textStyle = const TextStyle(
+    final textStyle = TextStyle(
       fontSize: 10,
 
-      color: Color(0xFF858BA5),
+      color: labelColor,
 
       fontWeight: FontWeight.w500,
     );
@@ -1531,9 +1635,7 @@ class _CollectionChartPainter extends CustomPainter {
 
       final value = safeMax * i / ySteps;
 
-      final label = value >= 1000
-          ? '₹${(value / 1000).toStringAsFixed(1)}k'
-          : '₹${value.toStringAsFixed(0)}';
+      final label = CurrencyFormatter.rupees(value, decimals: 0);
 
       final textPainter = TextPainter(
         text: TextSpan(text: label, style: textStyle),
@@ -1640,6 +1742,9 @@ class _CollectionChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _CollectionChartPainter oldDelegate) {
-    return oldDelegate.points != points;
+    return oldDelegate.points != points ||
+        oldDelegate.lineColor != lineColor ||
+        oldDelegate.gridColor != gridColor ||
+        oldDelegate.labelColor != labelColor;
   }
 }

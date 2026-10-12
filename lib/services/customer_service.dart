@@ -73,7 +73,7 @@ class CustomerService {
   static Future<Customer?> addCustomer({
     required String businessName,
     required String location,
-    required String phone,
+    String phone = '',
     double openingBalance = 0,
   }) async {
     errorMessage = null;
@@ -97,10 +97,6 @@ class CustomerService {
 
       if (cleanLocation.isEmpty) {
         throw Exception('Location is required.');
-      }
-
-      if (cleanPhone.isEmpty) {
-        throw Exception('Phone number is required.');
       }
 
       if (openingBalance < 0) {
@@ -160,6 +156,7 @@ class CustomerService {
     required String businessName,
     required String location,
     required String phone,
+    double? openingBalance,
   }) async {
     errorMessage = null;
 
@@ -178,17 +175,22 @@ class CustomerService {
         throw Exception('Location is required.');
       }
 
-      if (cleanPhone.isEmpty) {
-        throw Exception('Phone number is required.');
+      if (openingBalance != null && openingBalance < 0) {
+        throw Exception('Opening balance cannot be negative.');
+      }
+
+      final updates = <String, dynamic>{
+        'business_name': cleanBusinessName,
+        'location': cleanLocation,
+        'phone': cleanPhone,
+      };
+      if (openingBalance != null) {
+        updates['opening_balance'] = openingBalance;
       }
 
       final response = await _supabase
           .from('customers')
-          .update({
-            'business_name': cleanBusinessName,
-            'location': cleanLocation,
-            'phone': cleanPhone,
-          })
+          .update(updates)
           .eq('id', customerId)
           .select(
             'id, business_name, location, phone, opening_balance, is_active, created_at',

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../services/transaction_service.dart';
+import '../../services/currency_formatter.dart';
 
 class SalesmanPaymentsScreen extends StatefulWidget {
   const SalesmanPaymentsScreen({super.key});
@@ -387,7 +388,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
           const SizedBox(height: 20),
 
           Text(
-            '₹${_totalCollected.toStringAsFixed(2)}',
+            '${CurrencyFormatter.rupees(_totalCollected)}',
 
             style: const TextStyle(
               color: Colors.white,
@@ -420,7 +421,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
                 child: _SummaryMetric(
                   title: 'Today',
 
-                  value: '₹${_todayCollected.toStringAsFixed(2)}',
+                  value: '${CurrencyFormatter.rupees(_todayCollected)}',
                 ),
               ),
 
@@ -607,7 +608,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
 
                 children: [
                   Text(
-                    '+₹${amountReceived.toStringAsFixed(2)}',
+                    '+${CurrencyFormatter.rupees(amountReceived)}',
 
                     style: TextStyle(
                       fontSize: 15,
@@ -1051,7 +1052,7 @@ class _SalesmanPaymentDetailsScreenState
                 const SizedBox(height: 6),
 
                 Text(
-                  '₹${amountReceived.toStringAsFixed(2)}',
+                  '${CurrencyFormatter.rupees(amountReceived)}',
 
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onPrimaryContainer,
@@ -1097,32 +1098,32 @@ class _SalesmanPaymentDetailsScreenState
               _InfoRow(
                 label: 'Balance before',
 
-                value: '₹${previousBalance.toStringAsFixed(2)}',
+                value: '${CurrencyFormatter.rupees(previousBalance)}',
               ),
 
               _InfoRow(
                 label: 'Settlement',
 
-                value: '₹${settlementAmount.toStringAsFixed(2)}',
+                value: '${CurrencyFormatter.rupees(settlementAmount)}',
               ),
 
               if (discount > 0)
                 _InfoRow(
                   label: 'Discount',
 
-                  value: '₹${discount.toStringAsFixed(2)}',
+                  value: '${CurrencyFormatter.rupees(discount)}',
                 ),
 
               _InfoRow(
                 label: 'Amount received',
 
-                value: '₹${amountReceived.toStringAsFixed(2)}',
+                value: '${CurrencyFormatter.rupees(amountReceived)}',
               ),
 
               _InfoRow(
                 label: 'Balance after',
 
-                value: '₹${remainingBalance.toStringAsFixed(2)}',
+                value: '${CurrencyFormatter.rupees(remainingBalance)}',
 
                 valueColor: remainingBalance == 0
                     ? Colors.green.shade700
