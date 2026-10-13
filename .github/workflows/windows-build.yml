@@ -7,6 +7,39 @@ on:
   workflow_dispatch:
 
 jobs:
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build Android release APK
+        env:
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+        shell: bash
+        run: |
+          if [[ -z "$SUPABASE_PUBLISHABLE_KEY" ]]; then
+            echo "::error::Set the SUPABASE_PUBLISHABLE_KEY repository secret before building."
+            exit 1
+          fi
+          flutter build apk --release "--dart-define=SUPABASE_PUBLISHABLE_KEY=$SUPABASE_PUBLISHABLE_KEY"
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: BusinessPayment-Android-APK
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
   build-windows:
     runs-on: windows-latest
 
