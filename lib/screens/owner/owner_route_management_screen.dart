@@ -323,6 +323,52 @@ class _OwnerRouteManagementScreenState
     }
   }
 
+  Future<void> _removeTodayAssignment({
+    required String salesmanId,
+    required String salesmanName,
+  }) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Remove today’s route?'),
+        content: Text(
+          'Remove today’s route assignment for $salesmanName? The saved route and past assignments will remain.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Remove assignment'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    setState(() => _saving = true);
+    try {
+      final today = DateTime.now();
+      final dateKey =
+          '${today.year.toString().padLeft(4, '0')}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+      await _client
+          .from('salesman_daily_route_selections')
+          .delete()
+          .eq('salesman_id', salesmanId)
+          .eq('route_date', dateKey);
+      if (!mounted) return;
+      setState(() => _todayAssignments.remove(salesmanId));
+      _message('Today’s route removed for $salesmanName.');
+    } catch (error) {
+      debugPrint('Remove daily route failed: $error');
+      _message('Could not remove today’s route. Please try again.');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   Future<void> _deleteRoute() async {
     final route = _selectedRoute;
     if (route == null) return;
@@ -707,6 +753,19 @@ class _OwnerRouteManagementScreenState
                 title: Text((salesman['name'] ?? 'Salesman').toString()),
                 subtitle: Text(subtitle),
                 isThreeLine: assignedLocations.isNotEmpty,
+                trailing: assignedLocations.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Remove today’s route assignment',
+                        onPressed: _saving
+                            ? null
+                            : () => _removeTodayAssignment(
+                                salesmanId: salesmanId,
+                                salesmanName: (salesman['name'] ?? 'Salesman')
+                                    .toString(),
+                              ),
+                        icon: const Icon(Icons.delete_outline_rounded),
+                      ),
               ),
             );
           }),
