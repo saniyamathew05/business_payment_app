@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 
 import '../purchases/add_purchase_screen.dart';
 
@@ -302,7 +304,15 @@ class _OwnerMainScreenState extends State<OwnerMainScreen> {
       data: polishedTheme,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final isDesktop = constraints.maxWidth >= 1100;
+          // Desktop builds should use the desktop navigation even when Windows
+          // display scaling makes the logical window width fall below 1100 px.
+          final isNativeDesktop = switch (defaultTargetPlatform) {
+            TargetPlatform.windows ||
+            TargetPlatform.macOS ||
+            TargetPlatform.linux => true,
+            _ => false,
+          };
+          final isDesktop = isNativeDesktop || constraints.maxWidth >= 1100;
           if (isDesktop) {
             return Scaffold(
               backgroundColor: Theme.of(context).scaffoldBackgroundColor,
