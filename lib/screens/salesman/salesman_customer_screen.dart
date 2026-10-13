@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 
 import '../../models/customer.dart';
 
@@ -230,21 +229,6 @@ class _SalesmanCustomerDetailsScreenState
                     onPressed: balance <= 0
                         ? null
                         : () async {
-                            Position? visitPosition;
-                            try {
-                              visitPosition =
-                                  await SalesmanVisitService.captureLocation();
-                            } catch (error) {
-                              if (mounted)
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'Enable location before recording this payment: $error',
-                                    ),
-                                  ),
-                                );
-                              return;
-                            }
                             final paymentSaved = await Navigator.push<bool>(
                               context,
                               MaterialPageRoute(
@@ -253,24 +237,24 @@ class _SalesmanCustomerDetailsScreenState
                               ),
                             );
                             if (paymentSaved == true) {
-                              try {
-                                await SalesmanVisitService.recordStatus(
-                                  customerId: widget.customer.id,
-                                  status: 'paid',
-                                  capturedPosition: visitPosition,
-                                );
-                                if (mounted) Navigator.pop(context, true);
-                                return;
-                              } catch (error) {
-                                if (mounted)
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Payment was saved, but visit status/location could not be recorded: $error',
-                                      ),
-                                    ),
+                              final visitPosition =
+                                  await SalesmanVisitService.captureLocationIfAlreadyAllowed();
+                              if (visitPosition != null) {
+                                try {
+                                  await SalesmanVisitService.recordStatus(
+                                    customerId: widget.customer.id,
+                                    status: 'paid',
+                                    capturedPosition: visitPosition,
                                   );
+                                } catch (error) {
+                                  debugPrint(
+                                    'Could not record payment visit status: $error',
+                                  );
+                                }
                               }
+                              if (!mounted) return;
+                              Navigator.pop(context, true);
+                              return;
                             }
 
                             await TransactionService.loadTransactions();

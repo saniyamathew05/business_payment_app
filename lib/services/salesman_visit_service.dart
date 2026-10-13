@@ -247,6 +247,28 @@ class SalesmanVisitService {
     );
   }
 
+  /// Returns a location only when permission is already granted and GPS is on.
+  /// This never asks the salesman to enable location services.
+  static Future<Position?> captureLocationIfAlreadyAllowed() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) return null;
+      final permission = await Geolocator.checkPermission();
+      if (permission != LocationPermission.whileInUse &&
+          permission != LocationPermission.always) {
+        return null;
+      }
+      return await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 3),
+        ),
+      );
+    } catch (_) {
+      // Payment completion must not depend on optional visit location capture.
+      return null;
+    }
+  }
+
   static Future<void> recordStatus({
     required String customerId,
     required String status,

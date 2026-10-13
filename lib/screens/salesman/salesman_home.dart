@@ -407,22 +407,19 @@ class _SalesmanHomeState extends State<SalesmanHome> {
     );
 
     if (result == true) {
-      try {
-        await SalesmanVisitService.recordStatus(
-          customerId: customer.id,
-          status: 'paid',
-        );
-
-        todaysCustomerStatuses[customer.id] = 'paid';
-      } catch (error) {
-        if (mounted)
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Payment was saved, but the visit location/status could not be recorded: $error',
-              ),
-            ),
+      final position =
+          await SalesmanVisitService.captureLocationIfAlreadyAllowed();
+      if (position != null) {
+        try {
+          await SalesmanVisitService.recordStatus(
+            customerId: customer.id,
+            status: 'paid',
+            capturedPosition: position,
           );
+          todaysCustomerStatuses[customer.id] = 'paid';
+        } catch (error) {
+          debugPrint('Could not record payment visit status: $error');
+        }
       }
     }
 
