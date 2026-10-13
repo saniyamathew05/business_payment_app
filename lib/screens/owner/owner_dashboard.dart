@@ -109,21 +109,30 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
 
   double get _receivedToday => TransactionService.getCollectedToday();
 
-  double get _pendingToday {
-    final now = DateTime.now();
-    // Purchases/sales are stored in the same ledger table in some installations;
-    // use only transactions whose remaining balance increased today as pending
-    // activity. If the schema doesn't distinguish types, the value safely falls
-    // back to the sum of positive remaining-balance changes.
-    return _transactions
-        .where((t) => _sameDay(t.transactionDate, now))
-        .fold<double>(
-          0,
-          (sum, t) =>
-              sum +
-              math.max(0, t.remainingBalance - t.previousBalance).toDouble(),
-        );
+  List<Customer> _todayRouteCustomers(List<Customer> customers) {
+    final routeLocations = _todaySalesmanActivity
+        .expand((activity) => activity.routeLocations)
+        .map((location) => location.trim().toLowerCase())
+        .where((location) => location.isNotEmpty)
+        .toSet();
+    if (routeLocations.isEmpty) return const [];
+    return customers
+        .where(
+          (customer) =>
+              routeLocations.contains(customer.location.trim().toLowerCase()),
+        )
+        .toList();
   }
+
+  double _pendingToday(List<Customer> routeCustomers) =>
+      routeCustomers.fold<double>(
+        0.0,
+        (total, customer) =>
+            total +
+            math
+                .max(0, TransactionService.getCustomerBalance(customer.id))
+                .toDouble(),
+      );
 
   int get _locationCount => CustomerService.customers
       .map((c) => c.location.trim().toLowerCase())
@@ -193,6 +202,15 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
     final recent = recentPayments.take(5).toList();
     final locations = _locationDues(customers);
     final days = _chartDays();
+    final todayRouteCustomers = _todayRouteCustomers(customers);
+    final hasTodayRoute = _todaySalesmanActivity.any(
+      (activity) => activity.routeLocations.isNotEmpty,
+    );
+    final todayRouteCustomersWithDues = todayRouteCustomers
+        .where(
+          (customer) => TransactionService.getCustomerBalance(customer.id) > 0,
+        )
+        .length;
     return Container(
       color: _pageBackground,
       child: LayoutBuilder(
@@ -310,9 +328,10 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                     ),
                     _MetricCard(
                       title: 'Pending Today',
-                      value: _money(_pendingToday),
-                      foot:
-                          '${customers.where((c) => TransactionService.getCustomerBalance(c.id) > 0).length} customers with dues',
+                      value: _money(_pendingToday(todayRouteCustomers)),
+                      foot: !hasTodayRoute
+                          ? 'No routes assigned today'
+                          : '$todayRouteCustomersWithDues route customers with dues',
                       icon: Icons.schedule_rounded,
                       color: _red,
                       bg: const Color(0xFFFFECEC),
