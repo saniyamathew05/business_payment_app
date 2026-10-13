@@ -32,8 +32,7 @@ class OwnerDashboard extends StatefulWidget {
 class _OwnerDashboardState extends State<OwnerDashboard> {
   String _period = 'Today';
   bool _refreshing = false;
-  Map<String, String> _visitStatuses = const {};
-  List<String> _todayRoute = const [];
+  List<SalesmanDailyActivity> _todaySalesmanActivity = const [];
   String? _visitLoadError;
 
   Color get _ink => Theme.of(context).colorScheme.onSurface;
@@ -76,19 +75,14 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
       await TransactionService.loadCustomerBalances();
       await TransactionService.loadTransactions();
       try {
-        final results = await Future.wait<dynamic>([
-          SalesmanVisitService.loadTodayStatuses(),
-          SalesmanVisitService.loadTodayRoute(),
-        ]);
-        _visitStatuses = results[0] as Map<String, String>;
-        _todayRoute = results[1] as List<String>;
+        _todaySalesmanActivity =
+            await SalesmanVisitService.loadTodaySalesmanActivity();
         _visitLoadError = null;
       } catch (error) {
         // A missing optional visit table must not prevent the financial dashboard
         // from loading. Do not substitute sample visit data.
         _visitLoadError = error.toString();
-        _visitStatuses = const {};
-        _todayRoute = const [];
+        _todaySalesmanActivity = const [];
       }
     } finally {
       if (mounted) setState(() => _refreshing = false);
@@ -199,24 +193,6 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
     final recent = recentPayments.take(5).toList();
     final locations = _locationDues(customers);
     final days = _chartDays();
-    final visited = _visitStatuses.length;
-    final routeCustomerCount = customers
-        .where(
-          (c) => _todayRoute.any(
-            (l) => l.toLowerCase() == c.location.toLowerCase(),
-          ),
-        )
-        .length;
-    final planned = math
-        .max(
-          _todayRoute.isNotEmpty ? routeCustomerCount : customers.length,
-          visited,
-        )
-        .toInt();
-    final double progress = planned == 0
-        ? 0.0
-        : (visited / planned).clamp(0.0, 1.0).toDouble();
-
     return Container(
       color: _pageBackground,
       child: LayoutBuilder(
@@ -380,7 +356,10 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                       Expanded(
                         flex: 6,
                         child: _panel(
-                          child: _salesmanActivity(visited, planned, progress),
+                          child: _salesmanActivity(
+                            _todaySalesmanActivity,
+                            customers,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -391,7 +370,9 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                     ],
                   )
                 else ...[
-                  _panel(child: _salesmanActivity(visited, planned, progress)),
+                  _panel(
+                    child: _salesmanActivity(_todaySalesmanActivity, customers),
+                  ),
                   const SizedBox(height: 12),
                   _panel(child: _locationWiseDues(locations)),
                 ],
@@ -680,10 +661,10 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
     ],
   );
 
-  Widget _salesmanActivity(int visited, int planned, double progress) {
-    final locations = _todayRoute.isEmpty
-        ? 'Route not set'
-        : _todayRoute.take(2).join(', ');
+  Widget _salesmanActivity(
+    List<SalesmanDailyActivity> activities,
+    List<Customer> customers,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -693,93 +674,117 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
           onAction: widget.onOpenVisitAudit,
         ),
         const SizedBox(height: 12),
-        Row(
-          children: [
-            CircleAvatar(
-              radius: 17,
-              backgroundColor: Theme.of(context).brightness == Brightness.dark
-                  ? const Color(0xFF30285A)
-                  : const Color(0xFFEAE5FF),
-              child: const Icon(Icons.person_rounded, color: _purple, size: 19),
-            ),
-            const SizedBox(width: 9),
-            Expanded(
-              child: Column(
+        if (activities.isEmpty)
+          Text(
+            'No salesman accounts found.',
+            style: TextStyle(color: _muted, fontSize: 10.5),
+          )
+        else
+          ...activities.indexed.expand((entry) {
+            final index = entry.$1;
+            final activity = entry.$2;
+            final routeLocations = activity.routeLocations;
+            final locationSet = routeLocations
+                .map((location) => location.trim().toLowerCase())
+                .toSet();
+            final planned = customers
+                .where(
+                  (customer) => locationSet.contains(
+                    customer.location.trim().toLowerCase(),
+                  ),
+                )
+                .length;
+            final visited = activity.visitedCustomerCount;
+            final progress = planned == 0
+                ? 0.0
+                : (visited / planned).clamp(0.0, 1.0).toDouble();
+            final routeLabel = routeLocations.isEmpty
+                ? 'No route assigned'
+                : [
+                    if (activity.routeName?.trim().isNotEmpty == true)
+                      activity.routeName!.trim(),
+                    routeLocations.join(' → '),
+                  ].join(' · ');
+            return [
+              if (index > 0) Divider(height: 18, color: _line),
+              Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Salesman',
-                    style: TextStyle(
-                      color: _ink,
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w700,
+                  CircleAvatar(
+                    radius: 16,
+                    backgroundColor:
+                        Theme.of(context).brightness == Brightness.dark
+                        ? const Color(0xFF30285A)
+                        : const Color(0xFFEAE5FF),
+                    child: Text(
+                      activity.salesmanName.trim().isEmpty
+                          ? 'S'
+                          : activity.salesmanName.trim()[0].toUpperCase(),
+                      style: const TextStyle(
+                        color: _purple,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
-                  Text(
-                    '$visited${planned > 0 ? '/$planned' : ''} customers visited',
-                    style: TextStyle(color: _muted, fontSize: 9.5),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          activity.salesmanName,
+                          style: TextStyle(
+                            color: _ink,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          routeLabel,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: _muted, fontSize: 9.5),
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          planned == 0
+                              ? '$visited visits recorded today'
+                              : '$visited/$planned customers visited today',
+                          style: TextStyle(color: _muted, fontSize: 9),
+                        ),
+                        const SizedBox(height: 5),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: LinearProgressIndicator(
+                            value: progress,
+                            minHeight: 6,
+                            backgroundColor:
+                                Theme.of(context).brightness == Brightness.dark
+                                ? Theme.of(
+                                    context,
+                                  ).colorScheme.surfaceContainerHighest
+                                : const Color(0xFFECEBFA),
+                            valueColor: const AlwaysStoppedAnimation(_purple),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 6),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: LinearProgressIndicator(
-                      value: progress,
-                      minHeight: 7,
-                      backgroundColor:
-                          Theme.of(context).brightness == Brightness.dark
-                          ? Theme.of(
-                              context,
-                            ).colorScheme.surfaceContainerHighest
-                          : const Color(0xFFECEBFA),
-                      valueColor: const AlwaysStoppedAnimation(_purple),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${(progress * 100).round()}%',
+                    style: TextStyle(
+                      color: _ink,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(width: 10),
-            Text(
-              '${(progress * 100).round()}%',
-              style: TextStyle(
-                color: _ink,
-                fontSize: 10.5,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Container(width: 1, height: 48, color: _line),
-            const SizedBox(width: 10),
-            const Icon(Icons.location_on_rounded, color: _purple, size: 18),
-            const SizedBox(width: 5),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Today’s Route',
-                    style: TextStyle(
-                      color: _ink,
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Text(
-                    locations,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: _muted, fontSize: 9),
-                  ),
-                  Text(
-                    _todayRoute.isEmpty
-                        ? 'Choose locations to begin'
-                        : '${_todayRoute.length} locations selected',
-                    style: TextStyle(color: _muted, fontSize: 8.5),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+            ];
+          }),
       ],
     );
   }

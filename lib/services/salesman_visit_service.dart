@@ -1,6 +1,22 @@
 import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+class SalesmanDailyActivity {
+  const SalesmanDailyActivity({
+    required this.salesmanId,
+    required this.salesmanName,
+    required this.routeLocations,
+    required this.visitedCustomerCount,
+    this.routeName,
+  });
+
+  final String salesmanId;
+  final String salesmanName;
+  final List<String> routeLocations;
+  final int visitedCustomerCount;
+  final String? routeName;
+}
+
 /// Supabase-backed route selection and daily customer visit status service.
 class SalesmanVisitService {
   SalesmanVisitService._();
@@ -43,11 +59,12 @@ class SalesmanVisitService {
   static Future<String?> loadRouteNameForLocations(
     List<String> assignedLocations,
   ) async {
-    final normalizedAssigned = assignedLocations
-        .map((location) => location.trim().toLowerCase())
-        .where((location) => location.isNotEmpty)
-        .toList()
-      ..sort();
+    final normalizedAssigned =
+        assignedLocations
+            .map((location) => location.trim().toLowerCase())
+            .where((location) => location.isNotEmpty)
+            .toList()
+          ..sort();
     if (normalizedAssigned.isEmpty) return null;
 
     final routes = await _client
@@ -56,11 +73,12 @@ class SalesmanVisitService {
     for (final route in routes) {
       final rawLocations = route['locations'];
       if (rawLocations is! List) continue;
-      final routeLocations = rawLocations
-          .map((location) => location.toString().trim().toLowerCase())
-          .where((location) => location.isNotEmpty)
-          .toList()
-        ..sort();
+      final routeLocations =
+          rawLocations
+              .map((location) => location.toString().trim().toLowerCase())
+              .where((location) => location.isNotEmpty)
+              .toList()
+            ..sort();
       if (routeLocations.length != normalizedAssigned.length) continue;
       if (List.generate(
         routeLocations.length,
@@ -115,6 +133,91 @@ class SalesmanVisitService {
       }
     }
     return result;
+  }
+
+  static Future<List<SalesmanDailyActivity>> loadTodaySalesmanActivity() async {
+    final today = _todayKey();
+    final results = await Future.wait([
+      _client
+          .from('profiles')
+          .select('id, name')
+          .eq('role', 'salesman')
+          .order('name'),
+      _client
+          .from('salesman_daily_route_selections')
+          .select('salesman_id, locations')
+          .eq('route_date', today),
+      _client
+          .from('salesman_customer_daily_status')
+          .select('entered_by, customer_id')
+          .eq('status_date', today),
+      _client.from('salesman_route_templates').select('route_name, locations'),
+    ]);
+
+    final profiles = List<Map<String, dynamic>>.from(results[0] as List);
+    final routeRows = List<Map<String, dynamic>>.from(results[1] as List);
+    final statusRows = List<Map<String, dynamic>>.from(results[2] as List);
+    final templates = List<Map<String, dynamic>>.from(results[3] as List);
+
+    final routesBySalesman = <String, List<String>>{};
+    for (final row in routeRows) {
+      final salesmanId = row['salesman_id']?.toString();
+      final locations = row['locations'];
+      if (salesmanId != null && locations is List) {
+        routesBySalesman[salesmanId] = locations
+            .map((location) => location.toString().trim())
+            .where((location) => location.isNotEmpty)
+            .toList();
+      }
+    }
+
+    final visitsBySalesman = <String, Set<String>>{};
+    for (final row in statusRows) {
+      final salesmanId = row['entered_by']?.toString();
+      final customerId = row['customer_id']?.toString();
+      if (salesmanId != null && customerId != null) {
+        visitsBySalesman
+            .putIfAbsent(salesmanId, () => <String>{})
+            .add(customerId);
+      }
+    }
+
+    return profiles.map((profile) {
+      final salesmanId = profile['id'].toString();
+      final locations = routesBySalesman[salesmanId] ?? const <String>[];
+      final normalizedLocations =
+          locations.map((location) => location.toLowerCase()).toList()..sort();
+      String? routeName;
+      if (normalizedLocations.isNotEmpty) {
+        for (final template in templates) {
+          final rawLocations = template['locations'];
+          if (rawLocations is! List) continue;
+          final templateLocations =
+              rawLocations
+                  .map((location) => location.toString().trim().toLowerCase())
+                  .where((location) => location.isNotEmpty)
+                  .toList()
+                ..sort();
+          if (templateLocations.length == normalizedLocations.length &&
+              List.generate(
+                templateLocations.length,
+                (index) =>
+                    templateLocations[index] == normalizedLocations[index],
+              ).every((matches) => matches)) {
+            routeName = template['route_name']?.toString();
+            break;
+          }
+        }
+      }
+
+      return SalesmanDailyActivity(
+        salesmanId: salesmanId,
+        salesmanName: profile['name']?.toString() ?? 'Salesman',
+        routeName: routeName,
+        routeLocations: locations,
+        visitedCustomerCount: visitsBySalesman[salesmanId]?.length ?? 0,
+      );
+    }).toList();
   }
 
   static Future<Position> captureLocation() async {

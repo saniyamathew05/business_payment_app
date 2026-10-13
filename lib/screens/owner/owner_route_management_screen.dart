@@ -31,7 +31,7 @@ class _OwnerRouteManagementScreenState
   List<Map<String, dynamic>> _salesmen = [];
   final Map<String, List<String>> _todayAssignments = {};
   String? _selectedRouteId;
-  String? _selectedSalesmanId;
+  final Set<String> _selectedSalesmanIds = {};
   Set<String> _selectedLocations = {};
 
   List<String> get _availableLocations =>
@@ -109,9 +109,12 @@ class _OwnerRouteManagementScreenState
         _selectedRouteId ??= _routes.isEmpty
             ? null
             : _routes.first['id'].toString();
-        _selectedSalesmanId ??= _salesmen.isEmpty
-            ? null
-            : _salesmen.first['id'].toString();
+        final availableSalesmanIds = _salesmen
+            .map((salesman) => salesman['id'].toString())
+            .toSet();
+        _selectedSalesmanIds.removeWhere(
+          (id) => !availableSalesmanIds.contains(id),
+        );
         _selectedLocations = _selectedRoute == null
             ? <String>{}
             : Set<String>.from(
@@ -270,9 +273,13 @@ class _OwnerRouteManagementScreenState
 
   Future<void> _assignForToday() async {
     final route = _selectedRoute;
-    final salesmanId = _selectedSalesmanId;
-    if (route == null || salesmanId == null) {
-      _message('Create a route and select a salesman first.');
+    final salesmanIds = _selectedSalesmanIds.toList();
+    if (route == null || salesmanIds.isEmpty) {
+      _message('Create a route and select at least one salesman first.');
+      return;
+    }
+    if (_selectedLocations.isEmpty) {
+      _message('Select at least one location for this route first.');
       return;
     }
     setState(() => _saving = true);
@@ -282,14 +289,30 @@ class _OwnerRouteManagementScreenState
           '${today.year.toString().padLeft(4, '0')}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
       final locations = _selectedLocations.toList()
         ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-      // Replaces only this salesman's assignment for today; previous dates remain unchanged.
-      await _client.from('salesman_daily_route_selections').upsert({
-        'salesman_id': salesmanId,
-        'route_date': dateKey,
-        'locations': locations,
-      }, onConflict: 'salesman_id,route_date');
+      // Assigns this location set to every selected salesman for today.
+      // Previous dates remain unchanged.
+      final assignments = salesmanIds
+          .map(
+            (salesmanId) => {
+              'salesman_id': salesmanId,
+              'route_date': dateKey,
+              'locations': locations,
+            },
+          )
+          .toList();
+      await _client
+          .from('salesman_daily_route_selections')
+          .upsert(assignments, onConflict: 'salesman_id,route_date');
       if (!mounted) return;
-      _message('Today’s locations assigned to the selected salesman.');
+      setState(() {
+        for (final salesmanId in salesmanIds) {
+          _todayAssignments[salesmanId] = locations;
+        }
+      });
+      _message(
+        'Today’s locations assigned to ${salesmanIds.length} salesman'
+        '${salesmanIds.length == 1 ? '' : 's'}.',
+      );
     } catch (error) {
       debugPrint('Assign daily route failed: $error');
       _message(
@@ -492,6 +515,7 @@ class _OwnerRouteManagementScreenState
                             onChanged: (id) {
                               setState(() {
                                 _selectedRouteId = id;
+                                _selectedSalesmanIds.clear();
                                 _selectedLocations = _selectedRoute == null
                                     ? <String>{}
                                     : Set<String>.from(
@@ -555,68 +579,71 @@ class _OwnerRouteManagementScreenState
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(18),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
+                        const SizedBox(height: 20),
+                        Divider(
+                          color: Theme.of(context).colorScheme.outlineVariant,
+                        ),
+                        const SizedBox(height: 12),
                         Text(
-                          'Assign locations for today',
-                          style: Theme.of(context).textTheme.titleLarge
+                          'Assign this route for today',
+                          style: Theme.of(context).textTheme.titleMedium
                               ?.copyWith(fontWeight: FontWeight.w800),
                         ),
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 4),
                         Text(
-                          'Change the selected locations each day. '
-                          'Yesterday’s assignment stays in history.',
+                          'Select one or more salesmen. They will all receive the locations checked above. You can choose another route for different salesmen.',
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<String>(
-                          value: _selectedSalesmanId,
-                          decoration: const InputDecoration(
-                            labelText: 'Salesman',
-                          ),
-                          items: _salesmen
-                              .map(
-                                (user) => DropdownMenuItem<String>(
-                                  value: user['id'].toString(),
-                                  child: Text(
-                                    (user['name'] ?? 'Salesman').toString(),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              )
-                              .toList(),
-                          onChanged: (id) =>
-                              setState(() => _selectedSalesmanId = id),
-                        ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 8),
+                        ..._salesmen.map((salesman) {
+                          final salesmanId = salesman['id'].toString();
+                          final currentLocations =
+                              _todayAssignments[salesmanId];
+                          final subtitle = currentLocations == null
+                              ? 'Not assigned today'
+                              : currentLocations.isEmpty
+                              ? 'No locations assigned today'
+                              : 'Currently assigned: ${currentLocations.join(' → ')}';
+                          return CheckboxListTile(
+                            contentPadding: EdgeInsets.zero,
+                            value: _selectedSalesmanIds.contains(salesmanId),
+                            title: Text(
+                              (salesman['name'] ?? 'Salesman').toString(),
+                            ),
+                            subtitle: Text(subtitle),
+                            onChanged: (selected) {
+                              setState(() {
+                                if (selected == true) {
+                                  _selectedSalesmanIds.add(salesmanId);
+                                } else {
+                                  _selectedSalesmanIds.remove(salesmanId);
+                                }
+                              });
+                            },
+                          );
+                        }),
+                        const SizedBox(height: 8),
                         FilledButton.icon(
                           onPressed:
                               _saving ||
                                   _selectedRoute == null ||
-                                  _selectedSalesmanId == null
+                                  _selectedSalesmanIds.isEmpty ||
+                                  _selectedLocations.isEmpty
                               ? null
                               : _assignForToday,
                           icon: const Icon(Icons.route_outlined),
                           label: const Text(
-                            'Assign selected locations for today',
+                            'Assign route to selected salesmen',
                           ),
                         ),
                         if (_salesmen.isEmpty)
                           Padding(
                             padding: const EdgeInsets.only(top: 8),
                             child: Text(
-                              'No salesman accounts were found. Add a user '
-                              'with the Salesman role first.',
-                              style: TextStyle(color: colors.error),
+                              'No salesman accounts were found. Add a user with the Salesman role first.',
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
                             ),
                           ),
                       ],

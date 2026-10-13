@@ -18,6 +18,7 @@ class CustomersScreen extends StatefulWidget {
 
 class _CustomersScreenState extends State<CustomersScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _locationsScrollController = ScrollController();
   String _searchQuery = '';
   String _selectedLocation = 'All';
 
@@ -49,6 +50,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _locationsScrollController.dispose();
     super.dispose();
   }
 
@@ -231,49 +233,57 @@ class _CustomersScreenState extends State<CustomersScreen> {
                   ),
                   SizedBox(
                     height: 42,
-                    child: ListView.separated(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 4,
+                    child: Scrollbar(
+                      controller: _locationsScrollController,
+                      thumbVisibility: true,
+                      trackVisibility: true,
+                      thickness: 7,
+                      radius: const Radius.circular(8),
+                      child: ListView.separated(
+                        controller: _locationsScrollController,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 4,
+                        ),
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _locations.length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 8),
+                        itemBuilder: (context, index) {
+                          final location = _locations[index];
+                          final selected = location == _selectedLocation;
+                          final count = location == 'All'
+                              ? CustomerService.customers.length
+                              : CustomerService.customers
+                                    .where(
+                                      (c) =>
+                                          c.location.trim().toLowerCase() ==
+                                          location.toLowerCase(),
+                                    )
+                                    .length;
+                          return ChoiceChip(
+                            selected: selected,
+                            showCheckmark: false,
+                            label: Text('$location ($count)'),
+                            labelStyle: TextStyle(
+                              color: selected ? Colors.white : _ink,
+                              fontSize: 12,
+                              fontWeight: selected
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                            ),
+                            selectedColor: _purpleBright,
+                            backgroundColor: surface,
+                            side: BorderSide(
+                              color: selected ? _purpleBright : _border,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            onSelected: (_) =>
+                                setState(() => _selectedLocation = location),
+                          );
+                        },
                       ),
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _locations.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 8),
-                      itemBuilder: (context, index) {
-                        final location = _locations[index];
-                        final selected = location == _selectedLocation;
-                        final count = location == 'All'
-                            ? CustomerService.customers.length
-                            : CustomerService.customers
-                                  .where(
-                                    (c) =>
-                                        c.location.trim().toLowerCase() ==
-                                        location.toLowerCase(),
-                                  )
-                                  .length;
-                        return ChoiceChip(
-                          selected: selected,
-                          showCheckmark: false,
-                          label: Text('$location ($count)'),
-                          labelStyle: TextStyle(
-                            color: selected ? Colors.white : _ink,
-                            fontSize: 12,
-                            fontWeight: selected
-                                ? FontWeight.w700
-                                : FontWeight.w500,
-                          ),
-                          selectedColor: _purpleBright,
-                          backgroundColor: surface,
-                          side: BorderSide(
-                            color: selected ? _purpleBright : _border,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                          onSelected: (_) =>
-                              setState(() => _selectedLocation = location),
-                        );
-                      },
                     ),
                   ),
                   const SizedBox(height: 5),

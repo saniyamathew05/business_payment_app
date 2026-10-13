@@ -1940,6 +1940,7 @@ class PaymentsScreen extends StatefulWidget {
 
 class _PaymentsScreenState extends State<PaymentsScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _ledgerHorizontalController = ScrollController();
   String _searchQuery = '';
   String _dateFilter = 'all';
   String _methodFilter = 'all';
@@ -1957,6 +1958,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
     CustomerService.dataVersion.removeListener(_onCustomersChanged);
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
+    _ledgerHorizontalController.dispose();
     super.dispose();
   }
 
@@ -2278,7 +2280,8 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
               padding: EdgeInsets.all(isDesktop ? 24 : 14),
               children: [
                 Text(
-                  'A chronological record of customer payments',
+                  'A chronological record of customer payments. '
+                  'Scroll the table sideways to see all columns.',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: colors.onSurfaceVariant,
                   ),
@@ -2494,9 +2497,16 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                       borderRadius: BorderRadius.circular(18),
                       side: BorderSide(color: colors.outlineVariant),
                     ),
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: DataTable(
+                    child: Scrollbar(
+                      controller: _ledgerHorizontalController,
+                      thumbVisibility: true,
+                      trackVisibility: true,
+                      thickness: 8,
+                      radius: const Radius.circular(8),
+                      child: SingleChildScrollView(
+                        controller: _ledgerHorizontalController,
+                        scrollDirection: Axis.horizontal,
+                        child: DataTable(
                         headingRowColor: WidgetStatePropertyAll(
                           colors.surfaceContainerHigh,
                         ),
@@ -2601,6 +2611,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                             ],
                           );
                         }).toList(),
+                        ),
                       ),
                     ),
                   )
