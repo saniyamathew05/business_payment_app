@@ -325,7 +325,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         decoration: const InputDecoration(
                           labelText: 'Opening balance',
                           prefixText: '₹ ',
-                          prefixIcon: Icon(Icons.account_balance_wallet_outlined),
+                          prefixIcon: Icon(
+                            Icons.account_balance_wallet_outlined,
+                          ),
                         ),
                         validator: (value) {
                           final amount = double.tryParse(
@@ -542,6 +544,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
         if (type == 'purchase') {
           totalPurchases += amount;
+          totalDiscount += discount;
         } else if (type == 'payment') {
           totalSettled += amount;
           totalDiscount += discount;
@@ -652,7 +655,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         ? 'Sales Return'
                         : 'Payment',
                     _money(amount),
-                    type == 'payment' ? _money(discount) : 'Rs. 0.00',
+                    (type == 'payment' || type == 'purchase')
+                        ? _money(discount)
+                        : 'Rs. 0.00',
                     type == 'payment' ? _money(received) : 'Rs. 0.00',
                     _money(balanceAfter),
                     receivedBy,
@@ -789,7 +794,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     await Navigator.push(
       context,
 
-      MaterialPageRoute(builder: (_) => const AddPurchaseScreen()),
+      MaterialPageRoute(
+        builder: (_) => AddPurchaseScreen(initialCustomer: _displayCustomer),
+      ),
     );
 
     await _refreshCustomerData();
@@ -2899,7 +2906,13 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             const Divider(height: 24),
 
             if (isPurchase) ...[
-              _detailRow('Sale Amount', _money(amount)),
+              _detailRow('Sale Amount After Discount', _money(amount)),
+
+              if (discount > 0) ...[
+                const SizedBox(height: 8),
+
+                _detailRow('Discount Given', _money(discount)),
+              ],
 
               const SizedBox(height: 8),
 

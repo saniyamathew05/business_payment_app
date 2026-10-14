@@ -30,11 +30,11 @@ class PurchaseService {
 
   /// Records a new customer purchase.
   ///
-  /// Purchases always add the full purchase amount to the customer's
-  /// outstanding balance. Only an owner can record a purchase.
+  /// Adds the sale amount less any discount to the customer's balance.
   static Future<Map<String, dynamic>?> recordPurchase({
     required String customerId,
     required double amount,
+    double discount = 0,
     String? notes,
     DateTime? transactionDate,
   }) async {
@@ -49,12 +49,16 @@ class PurchaseService {
     if (amount <= 0) {
       throw Exception('Purchase amount must be greater than zero.');
     }
+    if (discount < 0 || discount >= amount) {
+      throw Exception('Discount must be less than the purchase amount.');
+    }
 
     final response = await _supabase.rpc(
-      'record_purchase',
+      'record_purchase_with_discount',
       params: {
         'p_customer_id': customerId.trim(),
         'p_amount': amount,
+        'p_discount': discount,
         'p_notes': notes == null || notes.trim().isEmpty ? null : notes.trim(),
         'p_transaction_date': (transactionDate ?? DateTime.now())
             .toIso8601String(),

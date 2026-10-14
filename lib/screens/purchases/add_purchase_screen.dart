@@ -16,6 +16,7 @@ class AddPurchaseScreen extends StatefulWidget {
 
 class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
   final TextEditingController _amountController = TextEditingController();
+  final TextEditingController _finalAmountController = TextEditingController();
 
   final TextEditingController _notesController = TextEditingController();
 
@@ -42,6 +43,7 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
   @override
   void dispose() {
     _amountController.dispose();
+    _finalAmountController.dispose();
     _notesController.dispose();
     super.dispose();
   }
@@ -154,6 +156,17 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
       return;
     }
 
+    final finalAmount = double.tryParse(_finalAmountController.text.trim());
+    if (finalAmount == null || finalAmount <= 0 || finalAmount > amount) {
+      _showMessage(
+        'Enter an amount after discount that is greater than zero and no more than the original amount.',
+        isError: true,
+      );
+      return;
+    }
+
+    final discount = amount - finalAmount;
+
     final notes = _notesController.text.trim();
 
     setState(() {
@@ -164,6 +177,7 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
       await PurchaseService.recordPurchase(
         customerId: customer.id,
         amount: amount,
+        discount: discount,
         notes: notes.isEmpty ? null : notes,
         transactionDate: _selectedDate,
       );
@@ -501,7 +515,7 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
                   const SizedBox(height: 6),
 
                   Text(
-                    'Enter the amount of the new sale.',
+                    'Enter the original sale amount and the amount after discount.',
                     style: TextStyle(
                       fontSize: 13,
                       color: colorScheme.onSurfaceVariant,
@@ -516,15 +530,58 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
                       decimal: true,
                     ),
                     enabled: !_isSaving,
+                    onChanged: (_) => setState(() {}),
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w700,
                     ),
                     decoration: InputDecoration(
-                      labelText: 'Sale Amount',
+                      labelText: 'Original Sale Amount',
                       hintText: '0.00',
                       prefixText: '₹ ',
                       prefixIcon: const Icon(Icons.payments_outlined),
+                      filled: true,
+                      fillColor: colorScheme.surfaceContainerHighest,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(
+                          color: colorScheme.outline.withValues(alpha: 0.08),
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(
+                          color: Colors.orange.shade700,
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  TextField(
+                    controller: _finalAmountController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    enabled: !_isSaving,
+                    onChanged: (_) => setState(() {}),
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Amount After Discount',
+                      hintText: '0.00',
+                      prefixText: '₹ ',
+                      prefixIcon: const Icon(Icons.payments_outlined),
+                      helperText:
+                          'Discount: ₹${((double.tryParse(_amountController.text.trim()) ?? 0) - (double.tryParse(_finalAmountController.text.trim()) ?? 0)).clamp(0, double.infinity).toStringAsFixed(2)} · This amount is added to the balance.',
                       filled: true,
                       fillColor: colorScheme.surfaceContainerHighest,
                       border: OutlineInputBorder(

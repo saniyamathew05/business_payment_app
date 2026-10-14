@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/indian_currency_input_formatter.dart';
+import '../../models/customer.dart';
+import '../../services/customer_service.dart';
 
 class AddCustomerScreen extends StatefulWidget {
   const AddCustomerScreen({super.key});
@@ -21,15 +23,272 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
 
   bool isSaving = false;
 
+  List<Customer> _similarCustomers = const [];
+
+  List<String> _suggestedLocations = const [];
+
   final SupabaseClient supabase = Supabase.instance.client;
 
   @override
+  void initState() {
+    super.initState();
+    businessNameController.addListener(_updateSuggestions);
+    locationController.addListener(_updateSuggestions);
+    CustomerService.dataVersion.addListener(_updateSuggestions);
+    _updateSuggestions();
+  }
+
+  @override
   void dispose() {
+    businessNameController.removeListener(_updateSuggestions);
+    locationController.removeListener(_updateSuggestions);
+    CustomerService.dataVersion.removeListener(_updateSuggestions);
     businessNameController.dispose();
     locationController.dispose();
     phoneController.dispose();
     openingBalanceController.dispose();
     super.dispose();
+  }
+
+  String _normalize(String value) =>
+      value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+
+  double _similarity(String first, String second) {
+    if (first.isEmpty || second.isEmpty) return 0;
+    final previous = List<int>.generate(second.length + 1, (i) => i);
+    for (var i = 0; i < first.length; i++) {
+      var diagonal = previous[0];
+      previous[0] = i + 1;
+      for (var j = 0; j < second.length; j++) {
+        final above = previous[j + 1];
+        final cost = first[i] == second[j] ? 0 : 1;
+        previous[j + 1] = [
+          previous[j] + 1,
+          above + 1,
+          diagonal + cost,
+        ].reduce((a, b) => a < b ? a : b);
+        diagonal = above;
+      }
+    }
+    final distance = previous[second.length];
+    final length = first.length > second.length ? first.length : second.length;
+    return 1 - distance / length;
+  }
+
+  double _customerNameScore(String query, Customer customer) {
+    final name = _normalize(customer.businessName);
+    final prefixLength = query.length < name.length
+        ? query.length
+        : name.length;
+    final prefix = name.substring(0, prefixLength);
+    var score = _similarity(query, name);
+    score = score > _similarity(query, prefix)
+        ? score
+        : _similarity(query, prefix);
+
+    final queryWords = businessNameController.text
+        .toLowerCase()
+        .split(RegExp(r'[^a-z0-9]+'))
+        .where((word) => word.isNotEmpty);
+    final nameWords = customer.businessName
+        .toLowerCase()
+        .split(RegExp(r'[^a-z0-9]+'))
+        .where((word) => word.isNotEmpty)
+        .toList();
+    if (queryWords.isNotEmpty && nameWords.isNotEmpty) {
+      var total = 0.0;
+      for (final word in queryWords) {
+        final wordScore = nameWords
+            .map((candidate) {
+              if (candidate.startsWith(word)) return 1.0;
+              return _similarity(word, candidate);
+            })
+            .reduce((a, b) => a > b ? a : b);
+        total += wordScore;
+      }
+      final wordScore = total / queryWords.length;
+      if (wordScore > score) score = wordScore;
+    }
+    return score;
+  }
+
+  void _updateSuggestions() {
+    if (!mounted) return;
+    final query = _normalize(businessNameController.text.trim());
+    final customers = CustomerService.customers.toList();
+    if (query.length >= 2) {
+      customers.removeWhere((customer) {
+        final name = _normalize(customer.businessName);
+        return !name.contains(query) && _customerNameScore(query, customer) < 0.68;
+      });
+      customers.sort(
+        (a, b) => _customerNameScore(query, b).compareTo(
+          _customerNameScore(query, a),
+        ),
+      );
+    } else {
+      customers.clear();
+    }
+
+    final locationQuery = _normalize(locationController.text.trim());
+    final locations = CustomerService.customers
+        .map((customer) => customer.location.trim())
+        .where((location) => location.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    final matchingLocations = locations.where((location) {
+      return locationQuery.isEmpty ||
+          _normalize(location).contains(locationQuery);
+    }).take(8).toList();
+
+    if (!mounted) {
+      _similarCustomers = customers.take(5).toList();
+      _suggestedLocations = matchingLocations;
+      return;
+    }
+    setState(() {
+      _similarCustomers = customers.take(5).toList();
+      _suggestedLocations = matchingLocations;
+    });
+  }
+
+  Widget _buildSimilarCustomerSuggestions(ColorScheme colors) {
+    if (_similarCustomers.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colors.tertiaryContainer.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: colors.tertiary.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.info_outline_rounded, size: 18, color: colors.tertiary),
+              const SizedBox(width: 7),
+              Text(
+                'Similar customers already exist',
+                style: TextStyle(
+                  color: colors.onTertiaryContainer,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Text(
+            'Check these records before creating another customer.',
+            style: TextStyle(
+              color: colors.onTertiaryContainer,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 7),
+          ..._similarCustomers.map(
+            (customer) => Padding(
+              padding: const EdgeInsets.only(top: 5),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.storefront_outlined,
+                    size: 16,
+                    color: colors.onTertiaryContainer,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${customer.businessName} · ${customer.location}'
+                      '${customer.phone.trim().isEmpty ? '' : ' · ${customer.phone}'}',
+                      style: TextStyle(
+                        color: colors.onTertiaryContainer,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLocationSuggestions(ColorScheme colors) {
+    if (_suggestedLocations.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 9),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Choose an existing location',
+            style: TextStyle(
+              color: colors.onSurfaceVariant,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: _suggestedLocations.map((location) {
+              return ActionChip(
+                avatar: const Icon(Icons.location_on_outlined, size: 16),
+                label: Text(location),
+                onPressed: () {
+                  locationController.value = TextEditingValue(
+                    text: location,
+                    selection: TextSelection.collapsed(offset: location.length),
+                  );
+                },
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool> _confirmDuplicateCustomer(String businessName, String location) async {
+    final duplicates = CustomerService.customers.where((customer) {
+      return _normalize(customer.businessName) == _normalize(businessName) &&
+          _normalize(customer.location) == _normalize(location);
+    }).toList();
+    if (duplicates.isEmpty) return true;
+    final duplicate = duplicates.first;
+
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Customer may already exist'),
+            content: Text(
+              '${duplicate.businessName} is already listed in ${duplicate.location}. '
+              'Do you still want to create another record?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Create anyway'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 
   Future<void> saveCustomer() async {
@@ -59,6 +318,8 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
       _showMessage('Please enter a valid 10-digit phone number.');
       return;
     }
+
+    if (!await _confirmDuplicateCustomer(businessName, location)) return;
 
     setState(() {
       isSaving = true;
@@ -237,6 +498,8 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                   textCapitalization: TextCapitalization.words,
                 ),
 
+                _buildSimilarCustomerSuggestions(colorScheme),
+
                 const SizedBox(height: 14),
 
                 _FormField(
@@ -246,6 +509,8 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                   icon: Icons.location_on_outlined,
                   textCapitalization: TextCapitalization.words,
                 ),
+
+                _buildLocationSuggestions(colorScheme),
 
                 const SizedBox(height: 14),
 
