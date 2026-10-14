@@ -156,7 +156,10 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
       return;
     }
 
-    final finalAmount = double.tryParse(_finalAmountController.text.trim());
+    final finalAmountText = _finalAmountController.text.trim();
+    final finalAmount = finalAmountText.isEmpty
+        ? amount
+        : double.tryParse(finalAmountText);
     if (finalAmount == null || finalAmount <= 0 || finalAmount > amount) {
       _showMessage(
         'Enter an amount after discount that is greater than zero and no more than the original amount.',
@@ -581,7 +584,7 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
                       prefixText: '₹ ',
                       prefixIcon: const Icon(Icons.payments_outlined),
                       helperText:
-                          'Discount: ₹${((double.tryParse(_amountController.text.trim()) ?? 0) - (double.tryParse(_finalAmountController.text.trim()) ?? 0)).clamp(0, double.infinity).toStringAsFixed(2)} · This amount is added to the balance.',
+                          'Leave blank for no discount. Discount: ₹${((double.tryParse(_amountController.text.trim()) ?? 0) - (double.tryParse(_finalAmountController.text.trim().isEmpty ? _amountController.text.trim() : _finalAmountController.text.trim()) ?? 0)).clamp(0, double.infinity).toStringAsFixed(2)} · This amount is added to the balance.',
                       filled: true,
                       fillColor: colorScheme.surfaceContainerHighest,
                       border: OutlineInputBorder(
