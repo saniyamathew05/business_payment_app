@@ -338,13 +338,9 @@ class _SalesmanHomeState extends State<SalesmanHome> {
     if (confirm != true) return;
 
     try {
-      // Require a successful GPS capture before a refusal is recorded.
-      final refusalPosition = await SalesmanVisitService.captureLocation();
-
       await SalesmanVisitService.recordStatus(
         customerId: customer.id,
         status: 'rejected',
-        capturedPosition: refusalPosition,
       );
 
       await _loadData();
@@ -353,7 +349,7 @@ class _SalesmanHomeState extends State<SalesmanHome> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'Refusal recorded with GPS. Other salesmen will see this customer as Refused today.',
+              'No payment recorded. Other salesmen will see this customer as Refused today.',
             ),
           ),
         );

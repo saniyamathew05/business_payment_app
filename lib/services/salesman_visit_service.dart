@@ -279,15 +279,18 @@ class SalesmanVisitService {
       throw ArgumentError.value(status, 'status', 'Expected paid or rejected.');
     }
 
-    final position = capturedPosition ?? await captureLocation();
+    // A no-payment outcome is still valid without GPS. Payment outcomes keep
+    // the existing location requirement when no position was supplied.
+    final position = capturedPosition ??
+        (status == 'paid' ? await captureLocation() : null);
     await _client.rpc(
       'record_salesman_customer_status',
       params: {
         'p_customer_id': customerId,
         'p_status': status,
-        'p_latitude': position.latitude,
-        'p_longitude': position.longitude,
-        'p_accuracy_meters': position.accuracy,
+        'p_latitude': position?.latitude,
+        'p_longitude': position?.longitude,
+        'p_accuracy_meters': position?.accuracy,
         'p_note': note,
       },
     );

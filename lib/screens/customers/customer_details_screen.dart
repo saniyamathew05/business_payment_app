@@ -891,6 +891,37 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                             : null;
                       },
                     ),
+                    const SizedBox(height: 12),
+                    InkWell(
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: dialogContext,
+                          initialDate: paymentDate,
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
+                          helpText: 'Select payment date',
+                        );
+                        if (picked != null) {
+                          setDialogState(() {
+                            paymentDate = DateTime(
+                              picked.year,
+                              picked.month,
+                              picked.day,
+                              paymentDate.hour,
+                              paymentDate.minute,
+                              paymentDate.second,
+                            );
+                          });
+                        }
+                      },
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Payment Date',
+                          prefixIcon: Icon(Icons.calendar_today_outlined),
+                        ),
+                        child: Text(_formatDate(paymentDate)),
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
                       initialValue: method,
@@ -943,6 +974,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   'notes': notesController.text,
                   'method': method,
                   'methodNote': methodNoteController.text,
+                  'transactionDate': paymentDate,
                 });
               },
               child: const Text('Save changes'),
@@ -964,7 +996,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       notes: result['notes'] as String,
       paymentMethod: result['method'] as String,
       paymentMethodNote: result['methodNote'] as String,
-      transactionDate: paymentDate,
+      transactionDate: result['transactionDate'] as DateTime,
     );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(

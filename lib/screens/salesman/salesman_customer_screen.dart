@@ -302,20 +302,15 @@ class _SalesmanCustomerDetailsScreenState
                     );
                     if (confirm != true) return;
                     try {
-                      // Capture GPS before recording a refusal so no refusal can
-                      // be saved without the salesman's current location.
-                      final refusalPosition =
-                          await SalesmanVisitService.captureLocation();
                       await SalesmanVisitService.recordStatus(
                         customerId: widget.customer.id,
                         status: 'rejected',
-                        capturedPosition: refusalPosition,
                       );
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text(
-                              'Refusal recorded with GPS. Other salesmen will see this customer as handled today.',
+                              'No payment recorded. Other salesmen will see this customer as handled today.',
                             ),
                           ),
                         );

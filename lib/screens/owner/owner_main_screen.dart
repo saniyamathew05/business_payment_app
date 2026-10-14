@@ -2055,6 +2055,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
     var method = payment.paymentMethod.trim().toLowerCase();
     const methods = ['cash', 'cheque', 'neft', 'gpay'];
     if (!methods.contains(method)) method = 'cash';
+    var paymentDate = payment.transactionDate.toLocal();
     final formKey = GlobalKey<FormState>();
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
@@ -2100,6 +2101,37 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                             ? 'Discount must be less than amount'
                             : null;
                       },
+                    ),
+                    const SizedBox(height: 12),
+                    InkWell(
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: dialogContext,
+                          initialDate: paymentDate,
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
+                          helpText: 'Select payment date',
+                        );
+                        if (picked != null) {
+                          setDialogState(() {
+                            paymentDate = DateTime(
+                              picked.year,
+                              picked.month,
+                              picked.day,
+                              paymentDate.hour,
+                              paymentDate.minute,
+                              paymentDate.second,
+                            );
+                          });
+                        }
+                      },
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Payment Date',
+                          prefixIcon: Icon(Icons.calendar_today_outlined),
+                        ),
+                        child: Text(_formatDate(paymentDate)),
+                      ),
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
@@ -2153,6 +2185,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                   'notes': notesController.text,
                   'method': method,
                   'methodNote': methodNoteController.text,
+                  'transactionDate': paymentDate,
                 });
               },
               child: const Text('Save changes'),
@@ -2173,7 +2206,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
       notes: result['notes'] as String,
       paymentMethod: result['method'] as String,
       paymentMethodNote: result['methodNote'] as String,
-      transactionDate: payment.transactionDate,
+      transactionDate: result['transactionDate'] as DateTime,
     );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(

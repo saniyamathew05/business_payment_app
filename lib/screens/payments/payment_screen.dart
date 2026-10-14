@@ -102,14 +102,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
       _currentBalance = balance;
 
       _isLoadingBalance = false;
-
-      if (_amountController.text.isEmpty) {
-        _amountController.text = balance.toStringAsFixed(2);
-
-        _amountController.selection = TextSelection.fromPosition(
-          TextPosition(offset: _amountController.text.length),
-        );
-      }
     });
   }
 
