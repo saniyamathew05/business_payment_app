@@ -2906,7 +2906,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             const Divider(height: 24),
 
             if (isPurchase) ...[
-              _detailRow('Sale Amount After Discount', _money(amount)),
+              _detailRow('Original Amount', _money(amount + discount)),
+
+              const SizedBox(height: 8),
+
+              _detailRow('Amount After Discount', _money(amount)),
 
               if (discount > 0) ...[
                 const SizedBox(height: 8),

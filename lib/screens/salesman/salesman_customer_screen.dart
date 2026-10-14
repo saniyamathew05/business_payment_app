@@ -497,10 +497,10 @@ class _SalesmanCustomerDetailsScreenState
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                'Original rate: ${CurrencyFormatter.rupees(original)}',
+                                'Original amount: ${CurrencyFormatter.rupees(original)}',
                               ),
                               Text(
-                                'Discounted rate: ${CurrencyFormatter.rupees(net)}',
+                                'Amount after discount: ${CurrencyFormatter.rupees(net)}',
                               ),
                               if (discount > 0)
                                 Text(
