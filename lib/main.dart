@@ -1,6 +1,10 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'screens/owner/owner_main_screen.dart';
 
@@ -12,6 +16,13 @@ import 'services/auth_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  final isWindowsApp =
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+  if (isWindowsApp) {
+    await windowManager.ensureInitialized();
+    await windowManager.setPreventClose(true);
+  }
 
   const supabaseUrl = 'https://rxjexwtdhopkltrrlbnd.supabase.co';
 
@@ -47,8 +58,65 @@ Future<void> main() async {
 
 // ============================================================
 
-class BusinessPaymentApp extends StatelessWidget {
+class BusinessPaymentApp extends StatefulWidget {
   const BusinessPaymentApp({super.key});
+
+  @override
+  State<BusinessPaymentApp> createState() => _BusinessPaymentAppState();
+}
+
+class _BusinessPaymentAppState extends State<BusinessPaymentApp>
+    with WidgetsBindingObserver, WindowListener {
+  bool _isClosing = false;
+  Future<void>? _closeSignOut;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+      windowManager.addListener(this);
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+      windowManager.removeListener(this);
+    }
+    super.dispose();
+  }
+
+  @override
+  void onWindowClose() async {
+    if (_isClosing) return;
+    _isClosing = true;
+    await _signOutOnClose();
+    await windowManager.setPreventClose(false);
+    await windowManager.close();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.detached) {
+      unawaited(_signOutOnClose());
+    }
+  }
+
+  Future<void> _signOutOnClose() => _closeSignOut ??= _performSignOutOnClose();
+
+  Future<void> _performSignOutOnClose() async {
+    final auth = Supabase.instance.client.auth;
+    if (auth.currentSession == null) return;
+    try {
+      await auth.signOut(scope: SignOutScope.local);
+    } catch (error) {
+      // The launch-time logout below also covers forced closes and shutdowns
+      // where Flutter cannot finish this asynchronous cleanup.
+      debugPrint('Could not complete sign-out while closing the app: $error');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

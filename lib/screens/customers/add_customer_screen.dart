@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/indian_currency_input_formatter.dart';
 import '../../models/customer.dart';
 import '../../services/customer_service.dart';
+import 'customer_details_screen.dart';
 
 class AddCustomerScreen extends StatefulWidget {
   const AddCustomerScreen({super.key});
@@ -20,6 +21,10 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
   final phoneController = TextEditingController();
 
   final openingBalanceController = TextEditingController();
+  final _businessNameFocus = FocusNode();
+  final _locationFocus = FocusNode();
+  final _phoneFocus = FocusNode();
+  final _openingBalanceFocus = FocusNode();
 
   bool isSaving = false;
 
@@ -47,6 +52,10 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
     locationController.dispose();
     phoneController.dispose();
     openingBalanceController.dispose();
+    _businessNameFocus.dispose();
+    _locationFocus.dispose();
+    _phoneFocus.dispose();
+    _openingBalanceFocus.dispose();
     super.dispose();
   }
 
@@ -193,31 +202,60 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
           ..._similarCustomers.map(
             (customer) => Padding(
               padding: const EdgeInsets.only(top: 5),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    Icons.storefront_outlined,
-                    size: 16,
-                    color: colors.onTertiaryContainer,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '${customer.businessName} · ${customer.location}'
-                      '${customer.phone.trim().isEmpty ? '' : ' · ${customer.phone}'}',
-                      style: TextStyle(
-                        color: colors.onTertiaryContainer,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
+              child: Material(
+                color: colors.surface.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(10),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => _openSimilarCustomer(customer),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 6,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.storefront_outlined,
+                          size: 16,
+                          color: colors.onTertiaryContainer,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '${customer.businessName} · ${customer.location}'
+                            '${customer.phone.trim().isEmpty ? '' : ' · ${customer.phone}'}',
+                            style: TextStyle(
+                              color: colors.onTertiaryContainer,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: () => _openSimilarCustomer(customer),
+                          icon: const Icon(Icons.open_in_new_rounded, size: 15),
+                          label: const Text('Select'),
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
+                ),
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _openSimilarCustomer(Customer customer) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => CustomerDetailsScreen(customer: customer),
       ),
     );
   }
@@ -492,6 +530,8 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
 
                 _FormField(
                   controller: businessNameController,
+                  focusNode: _businessNameFocus,
+                  nextFocusNode: _locationFocus,
                   label: 'Business Name',
                   hint: 'e.g. ABC Traders',
                   icon: Icons.storefront_outlined,
@@ -504,6 +544,8 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
 
                 _FormField(
                   controller: locationController,
+                  focusNode: _locationFocus,
+                  nextFocusNode: _phoneFocus,
                   label: 'Location',
                   hint: 'e.g. Kuttikanam',
                   icon: Icons.location_on_outlined,
@@ -516,6 +558,8 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
 
                 _FormField(
                   controller: phoneController,
+                  focusNode: _phoneFocus,
+                  nextFocusNode: _openingBalanceFocus,
                   label: 'Phone Number (Optional)',
                   hint: 'e.g. 9876543210',
                   icon: Icons.phone_outlined,
@@ -544,6 +588,8 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
 
                 _FormField(
                   controller: openingBalanceController,
+                  focusNode: _openingBalanceFocus,
+                  onSubmitted: saveCustomer,
                   label: 'Opening Balance',
                   hint: 'e.g. 5000',
                   icon: Icons.account_balance_wallet_outlined,
@@ -635,6 +681,9 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
 
 class _FormField extends StatelessWidget {
   final TextEditingController controller;
+  final FocusNode focusNode;
+  final FocusNode? nextFocusNode;
+  final VoidCallback? onSubmitted;
   final String label;
   final String hint;
   final IconData icon;
@@ -646,6 +695,9 @@ class _FormField extends StatelessWidget {
 
   const _FormField({
     required this.controller,
+    required this.focusNode,
+    this.nextFocusNode,
+    this.onSubmitted,
     required this.label,
     required this.hint,
     required this.icon,
@@ -662,6 +714,17 @@ class _FormField extends StatelessWidget {
 
     return TextField(
       controller: controller,
+      focusNode: focusNode,
+      textInputAction: nextFocusNode == null
+          ? TextInputAction.done
+          : TextInputAction.next,
+      onSubmitted: (_) {
+        if (nextFocusNode != null) {
+          FocusScope.of(context).requestFocus(nextFocusNode);
+        } else {
+          onSubmitted?.call();
+        }
+      },
       keyboardType: keyboardType,
       inputFormatters: inputFormatters,
       textCapitalization: textCapitalization,

@@ -35,6 +35,7 @@ class OwnerMainScreen extends StatefulWidget {
 
 class _OwnerMainScreenState extends State<OwnerMainScreen> {
   int _selectedIndex = 0;
+  bool _showMobileRoutes = false;
 
   bool _isInitialLoading = true;
 
@@ -339,11 +340,19 @@ class _OwnerMainScreenState extends State<OwnerMainScreen> {
             );
           }
           return Scaffold(
-            body: IndexedStack(index: _selectedIndex, children: pages),
+            body: _showMobileRoutes
+                ? const OwnerRouteManagementScreen(
+                    page: OwnerRoutePage.places,
+                  )
+                : IndexedStack(index: _selectedIndex, children: pages),
             bottomNavigationBar: NavigationBar(
-              selectedIndex: _selectedIndex,
-              onDestinationSelected: (index) =>
-                  setState(() => _selectedIndex = index),
+              selectedIndex: _showMobileRoutes ? 4 : _selectedIndex,
+              onDestinationSelected: (index) {
+                setState(() {
+                  _showMobileRoutes = index == 4;
+                  if (index < 4) _selectedIndex = index;
+                });
+              },
               destinations: const [
                 NavigationDestination(
                   icon: Icon(Icons.dashboard_outlined),
@@ -364,6 +373,11 @@ class _OwnerMainScreenState extends State<OwnerMainScreen> {
                   icon: Icon(Icons.bar_chart_outlined),
                   selectedIcon: Icon(Icons.bar_chart_rounded),
                   label: 'Reports',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.route_outlined),
+                  selectedIcon: Icon(Icons.route_rounded),
+                  label: 'Routes',
                 ),
               ],
             ),
