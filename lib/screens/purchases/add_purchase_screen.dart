@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/customer.dart';
 import '../../services/customer_service.dart';
 import '../../services/transaction_service.dart';
@@ -196,6 +198,7 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
 
       Navigator.pop(context, true);
     } catch (error) {
+      debugPrint('Failed to save sale: $error');
       if (!mounted) {
         return;
       }
@@ -211,13 +214,16 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
   }
 
   String _friendlyError(Object error) {
-    final message = error.toString();
+    final message = error is PostgrestException
+        ? error.message
+        : error.toString();
 
     if (message.contains('Only an owner can record a purchase')) {
       return 'Only an owner can add sales.';
     }
 
-    if (message.contains('Customer was not found')) {
+    if (message.contains('Customer was not found') ||
+        message.contains('selected customer was not found')) {
       return 'Customer was not found or is inactive.';
     }
 
@@ -225,7 +231,20 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
       return 'Sale amount must be greater than zero.';
     }
 
-    return 'Could not save the sale. Please try again.';
+    if (message.contains('Discount must be less than')) {
+      return 'The discount must be less than the original sale amount.';
+    }
+
+    if (message.contains('record_purchase_with_discount') ||
+        message.contains('schema cache')) {
+      return 'Sale saving is not available on this app version. Update the app and try again.';
+    }
+
+    if (error is PostgrestException && message.trim().isNotEmpty) {
+      return 'Sale not saved: $message';
+    }
+
+    return 'Sale not saved: ${message.replaceFirst('Exception: ', '')}';
   }
 
   void _showMessage(String message, {bool isError = false}) {

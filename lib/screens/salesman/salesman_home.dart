@@ -15,6 +15,7 @@ import 'salesman_payments_screen.dart';
 import '../../services/customer_service.dart';
 
 import '../../services/transaction_service.dart';
+import '../../services/currency_formatter.dart';
 
 import '../../services/salesman_visit_service.dart';
 
@@ -1033,6 +1034,16 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                                                 color: colors.onSurfaceVariant,
                                                 fontSize: 10.5,
                                               ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            'Due ${CurrencyFormatter.rupees(TransactionService.getCustomerBalance(customer.id))}',
+                                            maxLines: 1,
+                                            style: TextStyle(
+                                              color: colors.primary,
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w700,
                                             ),
                                           ),
                                         ],

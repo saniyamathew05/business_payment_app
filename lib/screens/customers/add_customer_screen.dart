@@ -128,28 +128,34 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
     if (query.length >= 2) {
       customers.removeWhere((customer) {
         final name = _normalize(customer.businessName);
-        return !name.contains(query) && _customerNameScore(query, customer) < 0.68;
+        return !name.contains(query) &&
+            _customerNameScore(query, customer) < 0.68;
       });
       customers.sort(
-        (a, b) => _customerNameScore(query, b).compareTo(
-          _customerNameScore(query, a),
-        ),
+        (a, b) => _customerNameScore(
+          query,
+          b,
+        ).compareTo(_customerNameScore(query, a)),
       );
     } else {
       customers.clear();
     }
 
     final locationQuery = _normalize(locationController.text.trim());
-    final locations = CustomerService.customers
-        .map((customer) => customer.location.trim())
-        .where((location) => location.isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-    final matchingLocations = locations.where((location) {
-      return locationQuery.isEmpty ||
-          _normalize(location).contains(locationQuery);
-    }).take(8).toList();
+    final locations =
+        CustomerService.customers
+            .map((customer) => customer.location.trim())
+            .where((location) => location.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    final matchingLocations = locations
+        .where((location) {
+          return locationQuery.isEmpty ||
+              _normalize(location).contains(locationQuery);
+        })
+        .take(8)
+        .toList();
 
     if (!mounted) {
       _similarCustomers = customers.take(5).toList();
@@ -169,16 +175,20 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
       margin: const EdgeInsets.only(top: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: colors.tertiaryContainer.withValues(alpha: 0.45),
+        color: colors.tertiaryContainer,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: colors.tertiary.withValues(alpha: 0.25)),
+        border: Border.all(color: colors.tertiary),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.info_outline_rounded, size: 18, color: colors.tertiary),
+              Icon(
+                Icons.info_outline_rounded,
+                size: 18,
+                color: colors.tertiary,
+              ),
               const SizedBox(width: 7),
               Text(
                 'Similar customers already exist',
@@ -193,17 +203,14 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
           const SizedBox(height: 5),
           Text(
             'Check these records before creating another customer.',
-            style: TextStyle(
-              color: colors.onTertiaryContainer,
-              fontSize: 12,
-            ),
+            style: TextStyle(color: colors.onTertiaryContainer, fontSize: 12),
           ),
           const SizedBox(height: 7),
           ..._similarCustomers.map(
             (customer) => Padding(
               padding: const EdgeInsets.only(top: 5),
               child: Material(
-                color: colors.surface.withValues(alpha: 0.55),
+                color: colors.surface,
                 borderRadius: BorderRadius.circular(10),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(10),
@@ -218,7 +225,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                         Icon(
                           Icons.storefront_outlined,
                           size: 16,
-                          color: colors.onTertiaryContainer,
+                          color: colors.primary,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -226,7 +233,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                             '${customer.businessName} · ${customer.location}'
                             '${customer.phone.trim().isEmpty ? '' : ' · ${customer.phone}'}',
                             style: TextStyle(
-                              color: colors.onTertiaryContainer,
+                              color: colors.onSurface,
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
                             ),
@@ -298,7 +305,10 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
     );
   }
 
-  Future<bool> _confirmDuplicateCustomer(String businessName, String location) async {
+  Future<bool> _confirmDuplicateCustomer(
+    String businessName,
+    String location,
+  ) async {
     final duplicates = CustomerService.customers.where((customer) {
       return _normalize(customer.businessName) == _normalize(businessName) &&
           _normalize(customer.location) == _normalize(location);

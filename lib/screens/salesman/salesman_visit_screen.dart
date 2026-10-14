@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/customer.dart';
 import '../../services/customer_service.dart';
+import '../../services/currency_formatter.dart';
 import '../../services/salesman_visit_service.dart';
 import '../../services/transaction_service.dart';
 import 'salesman_customer_screen.dart';
@@ -354,6 +355,15 @@ class _SalesmanVisitScreenState extends State<SalesmanVisitScreen> {
                       Text(
                         '${customer.location}${customer.phone.trim().isEmpty ? '' : ' • ${customer.phone}'}',
                         style: theme.textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Amount due: ${CurrencyFormatter.rupees(TransactionService.getCustomerBalance(customer.id))}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ],
                   ),

@@ -127,7 +127,6 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
             )
 
             ''')
-          .eq('user_id', user.id)
           .order('transaction_date', ascending: false);
 
       if (!mounted) return;
@@ -200,10 +199,13 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
     final profile = payment['profiles'];
 
     if (profile is Map) {
-      return profile['name']?.toString() ?? 'User';
+      final name = profile['name']?.toString().trim() ?? '';
+      if (name.isNotEmpty) return name;
     }
 
-    return 'User';
+    return payment['user_id']?.toString() == _supabase.auth.currentUser?.id
+        ? 'You'
+        : 'Another team member';
   }
 
   @override

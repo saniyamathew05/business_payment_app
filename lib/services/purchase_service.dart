@@ -66,7 +66,7 @@ class PurchaseService {
     );
 
     if (response == null) {
-      return null;
+      throw Exception('The sale was not saved: the server returned no sale record.');
     }
 
     return Map<String, dynamic>.from(response as Map);

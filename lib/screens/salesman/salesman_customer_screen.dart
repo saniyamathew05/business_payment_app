@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../models/customer.dart';
 
@@ -24,6 +25,52 @@ class SalesmanCustomerDetailsScreen extends StatefulWidget {
 
 class _SalesmanCustomerDetailsScreenState
     extends State<SalesmanCustomerDetailsScreen> {
+  List<Map<String, dynamic>> _ledgerEntries = const [];
+  String _historyFilter = 'All';
+
+  List<Map<String, dynamic>> get _saleEntries => _ledgerEntries
+      .where((entry) => entry['entry_type']?.toString() == 'purchase')
+      .toList();
+
+  List<Map<String, dynamic>> get _returnEntries =>
+      _ledgerEntries.where((entry) {
+        final type = entry['entry_type']?.toString().toLowerCase();
+        return type == 'return' || type == 'sales_return';
+      }).toList();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCustomerHistory();
+  }
+
+  Future<void> _loadCustomerHistory() async {
+    await Future.wait([
+      TransactionService.loadTransactions(),
+      _loadSaleHistory(),
+    ]);
+  }
+
+  Future<void> _loadSaleHistory() async {
+    final entries = await TransactionService.getCustomerLedger(
+      widget.customer.id,
+    );
+    if (!mounted) return;
+    setState(() => _ledgerEntries = entries);
+  }
+
+  String _recordedBy(Map<String, dynamic> entry) {
+    final profile = entry['profiles'];
+    if (profile is Map) {
+      final name = profile['name']?.toString().trim() ?? '';
+      if (name.isNotEmpty) return name;
+    }
+    return entry['user_id']?.toString() ==
+            Supabase.instance.client.auth.currentUser?.id
+        ? 'You'
+        : 'Another team member';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -51,7 +98,7 @@ class _SalesmanCustomerDetailsScreenState
 
           return RefreshIndicator(
             onRefresh: () async {
-              await TransactionService.loadTransactions();
+              await _loadCustomerHistory();
 
               if (mounted) {
                 setState(() {});
@@ -363,92 +410,292 @@ class _SalesmanCustomerDetailsScreenState
                 ),
 
                 const SizedBox(height: 28),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: ['All', 'Sales', 'Payment', 'Sales Return'].map((
+                    filter,
+                  ) {
+                    return ChoiceChip(
+                      label: Text(filter),
+                      selected: _historyFilter == filter,
+                      onSelected: (_) =>
+                          setState(() => _historyFilter = filter),
+                    );
+                  }).toList(),
+                ),
+
+                if (_historyFilter == 'All' || _historyFilter == 'Sales') ...[
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Sales History',
+                        style: TextStyle(
+                          fontSize: 21,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (_saleEntries.isNotEmpty)
+                        Text(
+                          '${_saleEntries.length}',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  if (_saleEntries.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Text('No sales recorded yet.'),
+                    )
+                  else
+                    ..._saleEntries.map((entry) {
+                      final net = (entry['amount'] as num?)?.toDouble() ?? 0;
+                      final discount =
+                          (entry['discount'] as num?)?.toDouble() ?? 0;
+                      final original = net + discount;
+                      final balanceBefore =
+                          (entry['balance_before'] as num?)?.toDouble() ?? 0;
+                      final balanceAfter =
+                          (entry['balance_after'] as num?)?.toDouble() ?? 0;
+                      final date = DateTime.tryParse(
+                        entry['transaction_date']?.toString() ?? '',
+                      )?.toLocal();
+                      final dateLabel = date == null
+                          ? ''
+                          : '${date.day.toString().padLeft(2, '0')}/'
+                                '${date.month.toString().padLeft(2, '0')}/'
+                                '${date.year}';
+                      final notes = entry['notes']?.toString().trim() ?? '';
+                      final recordedBy = _recordedBy(entry);
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.point_of_sale_outlined),
+                                  const SizedBox(width: 8),
+                                  const Expanded(
+                                    child: Text(
+                                      'Sale',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(dateLabel),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Original rate: ${CurrencyFormatter.rupees(original)}',
+                              ),
+                              Text(
+                                'Discounted rate: ${CurrencyFormatter.rupees(net)}',
+                              ),
+                              if (discount > 0)
+                                Text(
+                                  'Discount: ${CurrencyFormatter.rupees(discount)}',
+                                ),
+                              Text(
+                                'Balance: ${CurrencyFormatter.rupees(balanceBefore)} → ${CurrencyFormatter.rupees(balanceAfter)}',
+                              ),
+                              Text('Recorded by: $recordedBy'),
+                              if (notes.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text('Notes: $notes'),
+                              ],
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                ],
 
                 // ------------------------------------------------
 
                 // PAYMENT HISTORY
 
                 // ------------------------------------------------
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                if (_historyFilter == 'All' || _historyFilter == 'Payment') ...[
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
 
-                  children: [
-                    const Text(
-                      'Payment History',
-
-                      style: TextStyle(
-                        fontSize: 21,
-
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-
-                    if (payments.isNotEmpty)
-                      Text(
-                        '${payments.length}',
+                    children: [
+                      const Text(
+                        'Payment History',
 
                         style: TextStyle(
-                          color: Theme.of(context).colorScheme.primary,
+                          fontSize: 21,
 
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                  ],
-                ),
 
-                const SizedBox(height: 12),
-
-                if (payments.isEmpty)
-                  Container(
-                    padding: const EdgeInsets.all(28),
-
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: Theme.of(context).colorScheme.outlineVariant,
-                      ),
-
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-
-                    child: Column(
-                      children: [
-                        Icon(
-                          Icons.receipt_long_outlined,
-
-                          size: 42,
-
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        const Text(
-                          'No payments yet',
-
-                          style: TextStyle(fontWeight: FontWeight.w600),
-                        ),
-
-                        const SizedBox(height: 4),
-
+                      if (payments.isNotEmpty)
                         Text(
-                          'Payment history will appear here.',
-
-                          textAlign: TextAlign.center,
+                          '${payments.length}',
 
                           style: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  if (payments.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(28),
+
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.outlineVariant,
+                        ),
+
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.receipt_long_outlined,
+
+                            size: 42,
+
                             color: Theme.of(
                               context,
                             ).colorScheme.onSurfaceVariant,
                           ),
-                        ),
-                      ],
-                    ),
-                  )
-                else
-                  ...payments.map(
-                    (payment) => _PaymentCard(transaction: payment),
-                  ),
 
+                          const SizedBox(height: 12),
+
+                          const Text(
+                            'No payments yet',
+
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+
+                          const SizedBox(height: 4),
+
+                          Text(
+                            'Payment history will appear here.',
+
+                            textAlign: TextAlign.center,
+
+                            style: TextStyle(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    ...payments.map(
+                      (payment) => _PaymentCard(transaction: payment),
+                    ),
+                ],
+
+                if (_historyFilter == 'All' ||
+                    _historyFilter == 'Sales Return') ...[
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Sales Returns',
+                        style: TextStyle(
+                          fontSize: 21,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (_returnEntries.isNotEmpty)
+                        Text(
+                          '${_returnEntries.length}',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  if (_returnEntries.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Text('No sales returns recorded.'),
+                    )
+                  else
+                    ..._returnEntries.map((entry) {
+                      final amount = (entry['amount'] as num?)?.toDouble() ?? 0;
+                      final balanceBefore =
+                          (entry['balance_before'] as num?)?.toDouble() ?? 0;
+                      final balanceAfter =
+                          (entry['balance_after'] as num?)?.toDouble() ?? 0;
+                      final date = DateTime.tryParse(
+                        entry['transaction_date']?.toString() ?? '',
+                      )?.toLocal();
+                      final dateLabel = date == null
+                          ? ''
+                          : '${date.day.toString().padLeft(2, '0')}/'
+                                '${date.month.toString().padLeft(2, '0')}/'
+                                '${date.year}';
+                      final notes = entry['notes']?.toString().trim() ?? '';
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.assignment_return_outlined),
+                                  const SizedBox(width: 8),
+                                  const Expanded(
+                                    child: Text(
+                                      'Sales Return',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(dateLabel),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Returned amount: ${CurrencyFormatter.rupees(amount)}',
+                              ),
+                              Text(
+                                'Balance: ${CurrencyFormatter.rupees(balanceBefore)} → ${CurrencyFormatter.rupees(balanceAfter)}',
+                              ),
+                              Text('Recorded by: ${_recordedBy(entry)}'),
+                              if (notes.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text('Notes: $notes'),
+                              ],
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                ],
                 const SizedBox(height: 20),
               ],
             ),
