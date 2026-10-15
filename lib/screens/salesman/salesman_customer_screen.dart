@@ -12,6 +12,7 @@ import '../payments/payment_screen.dart';
 import '../../services/transaction_service.dart';
 import '../../services/currency_formatter.dart';
 import '../../services/salesman_visit_service.dart';
+import '../../services/ledger_user_name_service.dart';
 
 class SalesmanCustomerDetailsScreen extends StatefulWidget {
   final Customer customer;
@@ -55,6 +56,17 @@ class _SalesmanCustomerDetailsScreenState
     final entries = await TransactionService.getCustomerLedger(
       widget.customer.id,
     );
+    try {
+      final names = await LedgerUserNameService.loadNames(
+        entries.map((entry) => entry['user_id']?.toString()),
+      );
+      for (final entry in entries) {
+        final name = names[entry['user_id']?.toString()];
+        if (name != null) entry['profiles'] = {'name': name};
+      }
+    } catch (error) {
+      debugPrint('Could not load transaction author names: $error');
+    }
     if (!mounted) return;
     setState(() => _ledgerEntries = entries);
   }
@@ -473,46 +485,72 @@ class _SalesmanCustomerDetailsScreenState
                       final recordedBy = _recordedBy(entry);
                       return Card(
                         margin: const EdgeInsets.only(bottom: 10),
-                        child: Padding(
-                          padding: const EdgeInsets.all(14),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  const Icon(Icons.point_of_sale_outlined),
-                                  const SizedBox(width: 8),
-                                  const Expanded(
-                                    child: Text(
-                                      'Sale',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w700,
+                        clipBehavior: Clip.antiAlias,
+                        child: InkWell(
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => _SalesmanSaleDetailsScreen(
+                                customer: widget.customer,
+                                entry: entry,
+                                recordedBy: recordedBy,
+                              ),
+                            ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.point_of_sale_outlined),
+                                    const SizedBox(width: 8),
+                                    const Expanded(
+                                      child: Text(
+                                        'Sale',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  Text(dateLabel),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Original amount: ${CurrencyFormatter.rupees(original)}',
-                              ),
-                              Text(
-                                'Amount after discount: ${CurrencyFormatter.rupees(net)}',
-                              ),
-                              if (discount > 0)
-                                Text(
-                                  'Discount: ${CurrencyFormatter.rupees(discount)}',
+                                    Text(dateLabel),
+                                  ],
                                 ),
-                              Text(
-                                'Balance: ${CurrencyFormatter.rupees(balanceBefore)} → ${CurrencyFormatter.rupees(balanceAfter)}',
-                              ),
-                              Text('Recorded by: $recordedBy'),
-                              if (notes.isNotEmpty) ...[
-                                const SizedBox(height: 4),
-                                Text('Notes: $notes'),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Original amount: ${CurrencyFormatter.rupees(original)}',
+                                ),
+                                Text(
+                                  'Amount after discount: ${CurrencyFormatter.rupees(net)}',
+                                ),
+                                if (discount > 0)
+                                  Text(
+                                    'Discount: ${CurrencyFormatter.rupees(discount)}',
+                                  ),
+                                Text(
+                                  'Balance: ${CurrencyFormatter.rupees(balanceBefore)} → ${CurrencyFormatter.rupees(balanceAfter)}',
+                                ),
+                                Text('Recorded by: $recordedBy'),
+                                if (notes.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Text('Notes: $notes'),
+                                ],
+                                const SizedBox(height: 8),
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: Text(
+                                    'View full details  ›',
+                                    style: TextStyle(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
                               ],
-                            ],
+                            ),
                           ),
                         ),
                       );
@@ -718,6 +756,259 @@ class _SalesmanCustomerDetailsScreenState
   }
 }
 
+class _SalesmanSaleDetailsScreen extends StatefulWidget {
+  const _SalesmanSaleDetailsScreen({
+    required this.customer,
+    required this.entry,
+    required this.recordedBy,
+  });
+
+  final Customer customer;
+  final Map<String, dynamic> entry;
+  final String recordedBy;
+
+  @override
+  State<_SalesmanSaleDetailsScreen> createState() =>
+      _SalesmanSaleDetailsScreenState();
+}
+
+class _SalesmanSaleDetailsScreenState
+    extends State<_SalesmanSaleDetailsScreen> {
+  Uint8List? _signature;
+  bool _loadingSignature = false;
+  bool _signatureLoaded = false;
+
+  double _number(String key) => (widget.entry[key] as num?)?.toDouble() ?? 0;
+
+  Future<void> _loadSignature() async {
+    final path = widget.entry['signature_path']?.toString();
+    if (path == null || path.isEmpty || _loadingSignature || _signatureLoaded) {
+      return;
+    }
+    setState(() => _loadingSignature = true);
+    final bytes = await TransactionService.downloadSignature(path);
+    if (!mounted) return;
+    setState(() {
+      _signature = bytes;
+      _loadingSignature = false;
+      _signatureLoaded = true;
+    });
+  }
+
+  String _dateLabel() {
+    final date = DateTime.tryParse(
+      widget.entry['transaction_date']?.toString() ?? '',
+    )?.toLocal();
+    if (date == null) return '—';
+    return '${date.day.toString().padLeft(2, '0')}/'
+        '${date.month.toString().padLeft(2, '0')}/${date.year}  '
+        '${date.hour.toString().padLeft(2, '0')}:'
+        '${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final entry = widget.entry;
+    final net = _number('amount');
+    final discount = _number('discount');
+    final original = net + discount;
+    final notes = entry['notes']?.toString().trim() ?? '';
+    final method = entry['payment_method']?.toString().trim() ?? '';
+    final methodNote = entry['payment_method_note']?.toString().trim() ?? '';
+    final signaturePath = entry['signature_path']?.toString();
+    final hasSignature = signaturePath != null && signaturePath.isNotEmpty;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Sale Details')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 32),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Sale / Purchase',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(_dateLabel()),
+                  const SizedBox(height: 18),
+                  _SaleDetailRow(
+                    label: 'Customer',
+                    value: widget.customer.businessName,
+                  ),
+                  _SaleDetailRow(
+                    label: 'Location',
+                    value: widget.customer.location,
+                  ),
+                  if (widget.customer.phone.trim().isNotEmpty)
+                    _SaleDetailRow(
+                      label: 'Phone',
+                      value: widget.customer.phone,
+                    ),
+                  _SaleDetailRow(
+                    label: 'Recorded by',
+                    value: widget.recordedBy,
+                  ),
+                  const Divider(height: 24),
+                  _SaleDetailRow(
+                    label: 'Original amount',
+                    value: CurrencyFormatter.rupees(original),
+                  ),
+                  _SaleDetailRow(
+                    label: 'Discount',
+                    value: CurrencyFormatter.rupees(discount),
+                  ),
+                  _SaleDetailRow(
+                    label: 'Amount after discount',
+                    value: CurrencyFormatter.rupees(net),
+                    emphasize: true,
+                  ),
+                  _SaleDetailRow(
+                    label: 'Balance before',
+                    value: CurrencyFormatter.rupees(_number('balance_before')),
+                  ),
+                  _SaleDetailRow(
+                    label: 'Balance after',
+                    value: CurrencyFormatter.rupees(_number('balance_after')),
+                  ),
+                  if (method.isNotEmpty)
+                    _SaleDetailRow(label: 'Payment method', value: method),
+                  if (methodNote.isNotEmpty)
+                    _SaleDetailRow(
+                      label: 'Payment method note',
+                      value: methodNote,
+                    ),
+                ],
+              ),
+            ),
+          ),
+          if (notes.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Notes',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(notes),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          if (hasSignature) ...[
+            const SizedBox(height: 12),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Customer Signature',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 10),
+                    if (_signature != null)
+                      Container(
+                        width: double.infinity,
+                        height: 180,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.outlineVariant,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Image.memory(_signature!, fit: BoxFit.contain),
+                      )
+                    else if (_signatureLoaded)
+                      const Text('Signature could not be loaded.')
+                    else
+                      OutlinedButton.icon(
+                        onPressed: _loadingSignature ? null : _loadSignature,
+                        icon: _loadingSignature
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.visibility_outlined),
+                        label: Text(
+                          _loadingSignature
+                              ? 'Loading signature…'
+                              : 'View signature',
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SaleDetailRow extends StatelessWidget {
+  const _SaleDetailRow({
+    required this.label,
+    required this.value,
+    this.emphasize = false,
+  });
+
+  final String label;
+  final String value;
+  final bool emphasize;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextStyle(
+      fontWeight: emphasize ? FontWeight.w800 : FontWeight.w500,
+      color: emphasize ? Theme.of(context).colorScheme.primary : null,
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Flexible(
+            child: Text(
+              value.isEmpty ? '—' : value,
+              textAlign: TextAlign.end,
+              style: style,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ============================================================
 
 // INFO CARD
@@ -861,7 +1152,23 @@ class _PaymentCardState extends State<_PaymentCard> {
           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
         ),
 
-        subtitle: Text(_formatDate(payment.transactionDate)),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(_formatDate(payment.transactionDate)),
+            const SizedBox(height: 3),
+            Text(
+              'Method: ${_displayPaymentMethod(payment.paymentMethod)}'
+              '${payment.paymentMethodNote.trim().isEmpty ? '' : ' • ${payment.paymentMethodNote.trim()}'}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
 
         children: [
           const Divider(),
@@ -887,6 +1194,21 @@ class _PaymentCardState extends State<_PaymentCard> {
               ),
             ],
           ),
+
+          const SizedBox(height: 12),
+
+          _BalanceItem(
+            label: 'Payment method',
+            value: _displayPaymentMethod(payment.paymentMethod),
+          ),
+
+          if (payment.paymentMethodNote.trim().isNotEmpty) ...[
+            const SizedBox(height: 4),
+            _BalanceItem(
+              label: 'Method note',
+              value: payment.paymentMethodNote.trim(),
+            ),
+          ],
 
           if (payment.notes.trim().isNotEmpty) ...[
             const SizedBox(height: 16),
@@ -997,6 +1319,19 @@ class _PaymentCardState extends State<_PaymentCard> {
         '${date.year}  '
         '${date.hour.toString().padLeft(2, '0')}:'
         '${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _displayPaymentMethod(String method) {
+    final value = method.trim().replaceAll('_', ' ');
+    if (value.isEmpty) return 'Not specified';
+    return value
+        .split(' ')
+        .map(
+          (part) => part.isEmpty
+              ? part
+              : '${part[0].toUpperCase()}${part.substring(1)}',
+        )
+        .join(' ');
   }
 }
 

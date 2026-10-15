@@ -32,9 +32,6 @@ class _SalesmanVisitScreenState extends State<SalesmanVisitScreen> {
 
   List<String> get _availableLocations {
     final values = _customers
-        .where(
-          (customer) => TransactionService.getCustomerBalance(customer.id) > 0,
-        )
         .map((customer) => customer.location.trim())
         .where((location) => location.isNotEmpty)
         .toSet()
@@ -46,11 +43,7 @@ class _SalesmanVisitScreenState extends State<SalesmanVisitScreen> {
   List<Customer> get _routeCustomers {
     if (_routeLocations.isEmpty) return <Customer>[];
     return _customers
-        .where(
-          (customer) =>
-              _routeLocations.contains(customer.location.trim()) &&
-              TransactionService.getCustomerBalance(customer.id) > 0,
-        )
+        .where((customer) => _routeLocations.contains(customer.location.trim()))
         .toList()
       ..sort(
         (a, b) => a.businessName.toLowerCase().compareTo(

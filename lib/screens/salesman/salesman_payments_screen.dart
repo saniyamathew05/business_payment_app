@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../services/currency_formatter.dart';
+import '../../services/ledger_user_name_service.dart';
 import '../../services/transaction_service.dart';
 
 class SalesmanPaymentsScreen extends StatefulWidget {
@@ -16,11 +17,16 @@ class SalesmanPaymentsScreen extends StatefulWidget {
 
 class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
   final SupabaseClient _supabase = Supabase.instance.client;
+  final TextEditingController _searchController = TextEditingController();
 
   List<Map<String, dynamic>> _payments = [];
 
   bool _isLoading = true;
   String? _loadError;
+  String _searchQuery = '';
+  String _dateFilter = 'all';
+  String _methodFilter = 'all';
+  DateTime? _selectedDate;
 
   double get _todayCollectedBySalesman {
     final now = DateTime.now();
@@ -81,6 +87,12 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
     _loadPayments();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadPayments() async {
     if (mounted) {
       setState(() {
@@ -93,8 +105,9 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
       if (user == null) throw Exception('You are not logged in.');
 
       // Read payment rows directly so older records remain visible even when
-      // their customer is inactive. The profiles relationship is intentionally
-      // omitted because salesman accounts cannot read profile names via RLS.
+      // their customer is inactive. Receiver names are looked up separately
+      // through a restricted RPC because salesman accounts cannot read other
+      // profiles directly.
       final response = await _supabase
           .from('payments')
           .select('''
@@ -107,16 +120,34 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
             transaction_date,
             notes,
             signature_path,
+            payment_method,
+            payment_method_note,
             user_id,
             customer_id,
             customers (business_name, location, phone)
           ''')
+          .eq('user_id', user.id)
           .order('transaction_date', ascending: false);
+      final payments = List<Map<String, dynamic>>.from(response);
+
+      // Resolve only the receiver names needed for these visible payment rows.
+      // The RPC exposes names, not the rest of another user's profile.
+      try {
+        final receiverNames = await LedgerUserNameService.loadNames(
+          payments.map((payment) => payment['user_id']?.toString()),
+        );
+        for (final payment in payments) {
+          final name = receiverNames[payment['user_id']?.toString()];
+          if (name != null) payment['profiles'] = {'name': name};
+        }
+      } catch (error) {
+        debugPrint('Could not load payment receiver names: $error');
+      }
 
       if (!mounted) return;
 
       setState(() {
-        _payments = List<Map<String, dynamic>>.from(response);
+        _payments = payments;
         _loadError = null;
         _isLoading = false;
       });
@@ -160,6 +191,19 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
     return '$day/$month/$year • $hour:$minute';
   }
 
+  String _formatPaymentMethod(Object? rawMethod) {
+    final method = rawMethod?.toString().trim().replaceAll('_', ' ') ?? '';
+    if (method.isEmpty) return 'Not specified';
+    return method
+        .split(' ')
+        .map(
+          (part) => part.isEmpty
+              ? part
+              : '${part[0].toUpperCase()}${part.substring(1)}',
+        )
+        .join(' ');
+  }
+
   Future<void> _openPaymentDetails(Map<String, dynamic> payment) async {
     await Navigator.push(
       context,
@@ -191,6 +235,87 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
     return payment['user_id']?.toString() == _supabase.auth.currentUser?.id
         ? 'You'
         : 'Another team member';
+  }
+
+  bool _matchesDate(Map<String, dynamic> payment) {
+    final dateString = payment['transaction_date']?.toString();
+    final parsed = dateString == null
+        ? null
+        : DateTime.tryParse(dateString)?.toLocal();
+    if (parsed == null) return false;
+
+    final day = DateTime(parsed.year, parsed.month, parsed.day);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    switch (_dateFilter) {
+      case 'today':
+        return day == today;
+      case 'week':
+        final start = today.subtract(Duration(days: today.weekday - 1));
+        return !day.isBefore(start) && !day.isAfter(today);
+      case 'month':
+        return day.year == today.year && day.month == today.month;
+      case 'date':
+        return _selectedDate == null ||
+            day ==
+                DateTime(
+                  _selectedDate!.year,
+                  _selectedDate!.month,
+                  _selectedDate!.day,
+                );
+      default:
+        return true;
+    }
+  }
+
+  List<Map<String, dynamic>> get _filteredPayments {
+    final query = _searchQuery.trim().toLowerCase();
+    return _payments.where((payment) {
+      if (!_matchesDate(payment)) return false;
+      if (_methodFilter != 'all') {
+        final method = payment['payment_method']
+            ?.toString()
+            .trim()
+            .toLowerCase()
+            .replaceAll(' ', '_');
+        if (method != _methodFilter) return false;
+      }
+      if (query.isEmpty) return true;
+      final customer = payment['customers'];
+      final values = <String>[
+        _customerName(payment),
+        if (customer is Map) customer['location']?.toString() ?? '',
+        payment['payment_method']?.toString() ?? '',
+        payment['notes']?.toString() ?? '',
+      ];
+      return values.any((value) => value.toLowerCase().contains(query));
+    }).toList();
+  }
+
+  Future<void> _chooseDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate ?? now,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(now.year, now.month, now.day),
+      helpText: 'Filter your payments by date',
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _selectedDate = DateTime(picked.year, picked.month, picked.day);
+      _dateFilter = 'date';
+    });
+  }
+
+  void _resetFilters() {
+    _searchController.clear();
+    setState(() {
+      _searchQuery = '';
+      _dateFilter = 'all';
+      _methodFilter = 'all';
+      _selectedDate = null;
+    });
   }
 
   @override
@@ -245,11 +370,15 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
             const SizedBox(height: 12),
           ],
 
-          _EmptyPaymentsState(onRefresh: _loadPayments),
+          _EmptyPaymentsState(
+            onRefresh: _loadPayments,
+            message: 'You have not recorded any payments yet.',
+          ),
         ],
       );
     }
 
+    final payments = _filteredPayments;
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
 
@@ -258,13 +387,17 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
       children: [
         _buildSummaryHeader(),
 
-        const SizedBox(height: 26),
+        const SizedBox(height: 20),
+
+        _buildFilters(),
+
+        const SizedBox(height: 24),
 
         Row(
           children: [
             const Expanded(
               child: Text(
-                'Payment History',
+                'Your Payment History',
 
                 style: TextStyle(
                   fontSize: 21,
@@ -286,7 +419,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
               ),
 
               child: Text(
-                '${_payments.length}',
+                '${payments.length} / ${_payments.length}',
 
                 style: const TextStyle(
                   fontWeight: FontWeight.w700,
@@ -300,8 +433,111 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
 
         const SizedBox(height: 12),
 
-        ..._payments.map((payment) => _buildPaymentCard(payment)),
+        if (payments.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 36),
+            child: Text(
+              'No payments match these filters.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          )
+        else
+          ...payments.map((payment) => _buildPaymentCard(payment)),
       ],
+    );
+  }
+
+  Widget _buildFilters() {
+    final colors = Theme.of(context).colorScheme;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth >= 650;
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            SizedBox(
+              width: wide ? 300 : constraints.maxWidth,
+              child: TextField(
+                controller: _searchController,
+                onChanged: (value) => setState(() => _searchQuery = value),
+                decoration: InputDecoration(
+                  labelText: 'Search your payments',
+                  hintText: 'Customer, location, method, or note',
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  suffixIcon: _searchQuery.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: 'Clear search',
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _searchQuery = '');
+                          },
+                          icon: const Icon(Icons.clear_rounded),
+                        ),
+                ),
+              ),
+            ),
+            SizedBox(
+              width: wide ? 175 : 155,
+              child: DropdownButtonFormField<String>(
+                value: _dateFilter,
+                decoration: const InputDecoration(labelText: 'Date'),
+                items: const [
+                  DropdownMenuItem(value: 'all', child: Text('All dates')),
+                  DropdownMenuItem(value: 'today', child: Text('Today')),
+                  DropdownMenuItem(value: 'week', child: Text('This week')),
+                  DropdownMenuItem(value: 'month', child: Text('This month')),
+                  DropdownMenuItem(value: 'date', child: Text('Choose date…')),
+                ],
+                onChanged: (value) {
+                  if (value == null) return;
+                  if (value == 'date') {
+                    _chooseDate();
+                  } else {
+                    setState(() {
+                      _dateFilter = value;
+                      _selectedDate = null;
+                    });
+                  }
+                },
+              ),
+            ),
+            SizedBox(
+              width: wide ? 175 : 155,
+              child: DropdownButtonFormField<String>(
+                value: _methodFilter,
+                decoration: const InputDecoration(labelText: 'Method'),
+                items: const [
+                  DropdownMenuItem(value: 'all', child: Text('All methods')),
+                  DropdownMenuItem(value: 'cash', child: Text('Cash')),
+                  DropdownMenuItem(value: 'cheque', child: Text('Cheque')),
+                  DropdownMenuItem(value: 'neft', child: Text('NEFT')),
+                  DropdownMenuItem(value: 'gpay', child: Text('GPay / Online')),
+                ],
+                onChanged: (value) =>
+                    setState(() => _methodFilter = value ?? 'all'),
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: _resetFilters,
+              icon: const Icon(Icons.filter_alt_off_rounded),
+              label: const Text('Reset'),
+            ),
+            if (_dateFilter == 'date' && _selectedDate != null)
+              Text(
+                'Date: ${_selectedDate!.day.toString().padLeft(2, '0')}/'
+                '${_selectedDate!.month.toString().padLeft(2, '0')}/'
+                '${_selectedDate!.year}',
+                style: TextStyle(color: colors.onSurfaceVariant),
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -447,6 +683,8 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
         : '';
 
     final receiverName = _receiverName(payment);
+    final paymentMethod = _formatPaymentMethod(payment['payment_method']);
+    final methodNote = payment['payment_method_note']?.toString().trim() ?? '';
 
     final settlementAmount = (payment['amount'] as num?)?.toDouble() ?? 0;
 
@@ -593,6 +831,16 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Method: $paymentMethod${methodNote.isEmpty ? '' : ' • $methodNote'}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -720,8 +968,12 @@ class _SummaryMetric extends StatelessWidget {
 
 class _EmptyPaymentsState extends StatelessWidget {
   final VoidCallback onRefresh;
+  final String message;
 
-  const _EmptyPaymentsState({required this.onRefresh});
+  const _EmptyPaymentsState({
+    required this.onRefresh,
+    this.message = 'No payments received yet',
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -758,8 +1010,8 @@ class _EmptyPaymentsState extends StatelessWidget {
 
           const SizedBox(height: 16),
 
-          const Text(
-            'No payments received yet',
+          Text(
+            message,
 
             textAlign: TextAlign.center,
 
@@ -885,6 +1137,19 @@ class _SalesmanPaymentDetailsScreenState
     return '$day/$month/$year • $hour:$minute';
   }
 
+  String _formatPaymentMethod(Object? rawMethod) {
+    final method = rawMethod?.toString().trim().replaceAll('_', ' ') ?? '';
+    if (method.isEmpty) return 'Not specified';
+    return method
+        .split(' ')
+        .map(
+          (part) => part.isEmpty
+              ? part
+              : '${part[0].toUpperCase()}${part.substring(1)}',
+        )
+        .join(' ');
+  }
+
   @override
   void initState() {
     super.initState();
@@ -931,6 +1196,11 @@ class _SalesmanPaymentDetailsScreenState
     final date = payment['transaction_date'] as String? ?? '';
 
     final notes = payment['notes'] as String? ?? '';
+
+    final paymentMethod = _formatPaymentMethod(payment['payment_method']);
+
+    final paymentMethodNote =
+        payment['payment_method_note']?.toString().trim() ?? '';
 
     final hasSignaturePath =
         payment['signature_path'] != null &&
@@ -1090,6 +1360,11 @@ class _SalesmanPaymentDetailsScreenState
 
             children: [
               _InfoRow(label: 'Received by', value: receiverName),
+
+              _InfoRow(label: 'Payment method', value: paymentMethod),
+
+              if (paymentMethodNote.isNotEmpty)
+                _InfoRow(label: 'Method note', value: paymentMethodNote),
 
               _InfoRow(
                 label: 'Balance before',

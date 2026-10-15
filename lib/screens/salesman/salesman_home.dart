@@ -365,22 +365,7 @@ class _SalesmanHomeState extends State<SalesmanHome> {
   Future<void> _openCustomer(Customer customer) async {
     try {
       todaysCustomerStatuses = await SalesmanVisitService.loadTodayStatuses();
-
-      if (todaysCustomerStatuses.containsKey(customer.id)) {
-        if (mounted) {
-          setState(() {});
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'This customer already has a recorded outcome today.',
-              ),
-            ),
-          );
-        }
-
-        return;
-      }
+      if (mounted) setState(() {});
     } catch (error) {
       debugPrint('Could not refresh customer visit status: $error');
     }
