@@ -24,7 +24,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
   bool _isLoading = true;
   String? _loadError;
   String _searchQuery = '';
-  String _dateFilter = 'all';
+  String _dateFilter = 'today';
   String _methodFilter = 'all';
   DateTime? _selectedDate;
 
@@ -104,10 +104,9 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
       final user = _supabase.auth.currentUser;
       if (user == null) throw Exception('You are not logged in.');
 
-      // Read payment rows directly so older records remain visible even when
-      // their customer is inactive. Receiver names are looked up separately
-      // through a restricted RPC because salesman accounts cannot read other
-      // profiles directly.
+      // Salesmen share the payment history, including entries made by their
+      // teammates. Receiver names are resolved separately through the
+      // restricted RPC because salesman accounts cannot read other profiles.
       final response = await _supabase
           .from('payments')
           .select('''
@@ -126,7 +125,6 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
             customer_id,
             customers (business_name, location, phone)
           ''')
-          .eq('user_id', user.id)
           .order('transaction_date', ascending: false);
       final payments = List<Map<String, dynamic>>.from(response);
 
@@ -251,18 +249,14 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
       case 'today':
         return day == today;
       case 'week':
-        final start = today.subtract(Duration(days: today.weekday - 1));
-        return !day.isBefore(start) && !day.isAfter(today);
+        final weekStart = today.subtract(Duration(days: today.weekday - 1));
+        return !day.isBefore(weekStart) && !day.isAfter(today);
       case 'month':
         return day.year == today.year && day.month == today.month;
       case 'date':
-        return _selectedDate == null ||
-            day ==
-                DateTime(
-                  _selectedDate!.year,
-                  _selectedDate!.month,
-                  _selectedDate!.day,
-                );
+        final selected = _selectedDate;
+        return selected == null ||
+            day == DateTime(selected.year, selected.month, selected.day);
       default:
         return true;
     }
@@ -285,7 +279,9 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
       final values = <String>[
         _customerName(payment),
         if (customer is Map) customer['location']?.toString() ?? '',
+        _receiverName(payment),
         payment['payment_method']?.toString() ?? '',
+        payment['payment_method_note']?.toString() ?? '',
         payment['notes']?.toString() ?? '',
       ];
       return values.any((value) => value.toLowerCase().contains(query));
@@ -299,7 +295,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
       initialDate: _selectedDate ?? now,
       firstDate: DateTime(2000),
       lastDate: DateTime(now.year, now.month, now.day),
-      helpText: 'Filter your payments by date',
+      helpText: 'Filter team payments by date',
     );
     if (picked == null || !mounted) return;
     setState(() {
@@ -312,7 +308,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
     _searchController.clear();
     setState(() {
       _searchQuery = '';
-      _dateFilter = 'all';
+      _dateFilter = 'today';
       _methodFilter = 'all';
       _selectedDate = null;
     });
@@ -372,7 +368,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
 
           _EmptyPaymentsState(
             onRefresh: _loadPayments,
-            message: 'You have not recorded any payments yet.',
+            message: 'No team payments are available yet.',
           ),
         ],
       );
@@ -397,7 +393,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
           children: [
             const Expanded(
               child: Text(
-                'Your Payment History',
+                'Team Payment History',
 
                 style: TextStyle(
                   fontSize: 21,
@@ -451,7 +447,6 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
   }
 
   Widget _buildFilters() {
-    final colors = Theme.of(context).colorScheme;
     return LayoutBuilder(
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= 650;
@@ -466,7 +461,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
                 controller: _searchController,
                 onChanged: (value) => setState(() => _searchQuery = value),
                 decoration: InputDecoration(
-                  labelText: 'Search your payments',
+                  labelText: 'Search team payments',
                   hintText: 'Customer, location, method, or note',
                   prefixIcon: const Icon(Icons.search_rounded),
                   suffixIcon: _searchQuery.isEmpty
@@ -488,8 +483,8 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
                 value: _dateFilter,
                 decoration: const InputDecoration(labelText: 'Date'),
                 items: const [
-                  DropdownMenuItem(value: 'all', child: Text('All dates')),
                   DropdownMenuItem(value: 'today', child: Text('Today')),
+                  DropdownMenuItem(value: 'all', child: Text('All dates')),
                   DropdownMenuItem(value: 'week', child: Text('This week')),
                   DropdownMenuItem(value: 'month', child: Text('This month')),
                   DropdownMenuItem(value: 'date', child: Text('Choose date…')),
@@ -533,7 +528,9 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
                 'Date: ${_selectedDate!.day.toString().padLeft(2, '0')}/'
                 '${_selectedDate!.month.toString().padLeft(2, '0')}/'
                 '${_selectedDate!.year}',
-                style: TextStyle(color: colors.onSurfaceVariant),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
           ],
         );
