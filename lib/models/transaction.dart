@@ -14,6 +14,8 @@ class PaymentTransaction {
   final double previousBalance;
   final double remainingBalance;
   final DateTime transactionDate;
+  /// When this row was actually entered, independent of its business date.
+  final DateTime? createdAt;
   final String notes;
   final Uint8List signature;
   final String? signaturePath;
@@ -44,6 +46,7 @@ class PaymentTransaction {
     required this.previousBalance,
     required this.remainingBalance,
     required this.transactionDate,
+    this.createdAt,
     required this.notes,
     required this.signature,
     this.signaturePath,

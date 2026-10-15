@@ -58,6 +58,7 @@ class TransactionService {
             remaining_balance,
 
             transaction_date,
+            created_at,
 
             notes,
 
@@ -86,8 +87,9 @@ class TransactionService {
               .select('id, name, role')
               .inFilter('id', userIds);
           for (final profile in profiles) {
-            profilesById[profile['id'].toString()] =
-                Map<String, dynamic>.from(profile);
+            profilesById[profile['id'].toString()] = Map<String, dynamic>.from(
+              profile,
+            );
           }
         } catch (error) {
           debugPrint('Could not load payment entry profiles: $error');
@@ -137,6 +139,10 @@ class TransactionService {
             remainingBalance: (row['remaining_balance'] as num).toDouble(),
 
             transactionDate: DateTime.parse(row['transaction_date'] as String),
+
+            createdAt: row['created_at'] == null
+                ? null
+                : DateTime.parse(row['created_at'] as String),
 
             notes: (row['notes'] as String?) ?? '',
 
@@ -241,9 +247,7 @@ class TransactionService {
 
       final role = _paymentEntryRole(currentProfile?['role']?.toString());
       final name = currentProfile?['name']?.toString().trim();
-      final receivedBy = name == null || name.isEmpty
-          ? role
-          : '$role • $name';
+      final receivedBy = name == null || name.isEmpty ? role : '$role • $name';
 
       transactions.insert(
         0,
@@ -266,6 +270,8 @@ class TransactionService {
           remainingBalance: savedTransaction.remainingBalance,
 
           transactionDate: savedTransaction.transactionDate,
+
+          createdAt: savedTransaction.createdAt,
 
           notes: savedTransaction.notes,
 
@@ -337,7 +343,7 @@ class TransactionService {
             'payment_method_note': paymentMethodNote.trim().isEmpty
                 ? null
                 : paymentMethodNote.trim(),
-            'transaction_date': transactionDate.toIso8601String(),
+            'transaction_date': transactionDate.toUtc().toIso8601String(),
           })
           .eq('id', paymentId);
       await loadTransactions();

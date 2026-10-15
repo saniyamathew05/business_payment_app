@@ -149,6 +149,20 @@ class _PaymentScreenState extends State<PaymentScreen> {
     setState(() {});
   }
 
+  DateTime _paymentEntryDateTime() {
+    final enteredAt = DateTime.now();
+    return DateTime(
+      _selectedDate.year,
+      _selectedDate.month,
+      _selectedDate.day,
+      enteredAt.hour,
+      enteredAt.minute,
+      enteredAt.second,
+      enteredAt.millisecond,
+      enteredAt.microsecond,
+    );
+  }
+
   void _clearSignature() {
     _signatureController.clear();
 
@@ -316,7 +330,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
         remainingBalance: _remainingBalance,
 
-        transactionDate: _selectedDate,
+        transactionDate: _paymentEntryDateTime(),
+
+        createdAt: DateTime.now(),
 
         notes: _notesController.text.trim(),
 
@@ -401,7 +417,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
           'p_signature_path': transaction.signaturePath,
 
-          'p_transaction_date': transaction.transactionDate.toIso8601String(),
+          'p_transaction_date': transaction.transactionDate
+              .toUtc()
+              .toIso8601String(),
           'p_payment_method': selectedPaymentMethod,
 
           'p_payment_method_note': transaction.paymentMethodNote.isEmpty
@@ -426,6 +444,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
         remainingBalance: (inserted['remaining_balance'] as num).toDouble(),
 
         transactionDate: DateTime.parse(inserted['transaction_date'] as String),
+
+        createdAt: inserted['created_at'] == null
+            ? transaction.createdAt
+            : DateTime.parse(inserted['created_at'] as String),
 
         notes: (inserted['notes'] as String?) ?? '',
 

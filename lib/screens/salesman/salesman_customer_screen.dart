@@ -1155,7 +1155,7 @@ class _PaymentCardState extends State<_PaymentCard> {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(_formatDate(payment.transactionDate)),
+            Text(_formatDate(payment.transactionDate, payment.createdAt)),
             const SizedBox(height: 3),
             Text(
               'Method: ${_displayPaymentMethod(payment.paymentMethod)}'
@@ -1313,12 +1313,14 @@ class _PaymentCardState extends State<_PaymentCard> {
     );
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.day.toString().padLeft(2, '0')}/'
-        '${date.month.toString().padLeft(2, '0')}/'
-        '${date.year}  '
-        '${date.hour.toString().padLeft(2, '0')}:'
-        '${date.minute.toString().padLeft(2, '0')}';
+  String _formatDate(DateTime date, DateTime? enteredAt) {
+    final localDate = date.toLocal();
+    final localTime = (enteredAt ?? date).toLocal();
+    return '${localDate.day.toString().padLeft(2, '0')}/'
+        '${localDate.month.toString().padLeft(2, '0')}/'
+        '${localDate.year}  '
+        '${localTime.hour.toString().padLeft(2, '0')}:'
+        '${localTime.minute.toString().padLeft(2, '0')}';
   }
 
   String _displayPaymentMethod(String method) {

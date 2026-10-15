@@ -87,7 +87,7 @@ class PaymentService {
         'p_discount': discount,
         'p_notes': notes.trim().isEmpty ? null : notes.trim(),
         'p_signature_path': signaturePath,
-        'p_transaction_date': transactionDate.toIso8601String(),
+        'p_transaction_date': transactionDate.toUtc().toIso8601String(),
         'p_payment_method': paymentMethod,
         'p_payment_method_note': paymentMethodNote.trim().isEmpty
             ? null
@@ -117,6 +117,9 @@ class PaymentService {
       previousBalance: (inserted['previous_balance'] as num).toDouble(),
       remainingBalance: (inserted['remaining_balance'] as num).toDouble(),
       transactionDate: DateTime.parse(inserted['transaction_date'] as String),
+      createdAt: inserted['created_at'] == null
+          ? DateTime.now()
+          : DateTime.parse(inserted['created_at'] as String),
       notes: (inserted['notes'] as String?) ?? '',
       signature: signature,
       signaturePath: inserted['signature_path'] as String?,

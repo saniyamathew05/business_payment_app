@@ -28,57 +28,32 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
   String _methodFilter = 'all';
   DateTime? _selectedDate;
 
-  double get _todayCollectedBySalesman {
-    final now = DateTime.now();
-    final currentUserId = _supabase.auth.currentUser?.id;
-    if (currentUserId == null) return 0;
+  List<Map<String, dynamic>> get _paymentsForSummary => _payments
+      .where(_matchesDate)
+      .where(_matchesMethod)
+      .toList(growable: false);
 
-    return _payments.fold(0.0, (total, payment) {
-      if (payment['user_id']?.toString() != currentUserId) return total;
-      final dateString = payment['transaction_date'] as String?;
-
-      if (dateString == null) {
-        return total;
-      }
-
-      final date = DateTime.tryParse(dateString)?.toLocal();
-
-      if (date == null) {
-        return total;
-      }
-
-      if (date.year == now.year &&
-          date.month == now.month &&
-          date.day == now.day) {
-        final amountReceived =
-            (payment['amount_received'] as num?)?.toDouble() ??
+  double get _selectedPaymentsTotal => _paymentsForSummary.fold<double>(
+    0,
+    (total, payment) =>
+        total +
+        ((payment['amount_received'] as num?)?.toDouble() ??
             ((payment['amount'] as num?)?.toDouble() ?? 0) -
-                ((payment['discount'] as num?)?.toDouble() ?? 0);
+                ((payment['discount'] as num?)?.toDouble() ?? 0)),
+  );
 
-        return total + amountReceived;
-      }
+  int get _selectedPaymentsCount => _paymentsForSummary.length;
 
-      return total;
-    });
-  }
-
-  int get _todayPaymentCountBySalesman {
-    final now = DateTime.now();
-    final currentUserId = _supabase.auth.currentUser?.id;
-    if (currentUserId == null) return 0;
-
-    return _payments.where((payment) {
-      if (payment['user_id']?.toString() != currentUserId) return false;
-      final dateString = payment['transaction_date'] as String?;
-      final date = dateString == null
-          ? null
-          : DateTime.tryParse(dateString)?.toLocal();
-      return date != null &&
-          date.year == now.year &&
-          date.month == now.month &&
-          date.day == now.day;
-    }).length;
-  }
+  String get _selectedPeriodLabel => switch (_dateFilter) {
+    'today' => 'Today',
+    'week' => 'This week',
+    'month' => 'This month',
+    'date' when _selectedDate != null =>
+      '${_selectedDate!.day.toString().padLeft(2, '0')}/'
+          '${_selectedDate!.month.toString().padLeft(2, '0')}/'
+          '${_selectedDate!.year}',
+    _ => 'All dates',
+  };
 
   @override
   void initState() {
@@ -117,6 +92,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
             previous_balance,
             remaining_balance,
             transaction_date,
+            created_at,
             notes,
             signature_path,
             payment_method,
@@ -167,7 +143,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
     }
   }
 
-  String _formatDate(String date) {
+  String _formatDate(String date, [String? enteredAt]) {
     final parsed = DateTime.tryParse(date);
 
     if (parsed == null) {
@@ -175,6 +151,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
     }
 
     final local = parsed.toLocal();
+    final entered = DateTime.tryParse(enteredAt ?? '')?.toLocal() ?? local;
 
     final day = local.day.toString().padLeft(2, '0');
 
@@ -182,9 +159,9 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
 
     final year = local.year.toString();
 
-    final hour = local.hour.toString().padLeft(2, '0');
+    final hour = entered.hour.toString().padLeft(2, '0');
 
-    final minute = local.minute.toString().padLeft(2, '0');
+    final minute = entered.minute.toString().padLeft(2, '0');
 
     return '$day/$month/$year • $hour:$minute';
   }
@@ -262,18 +239,21 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
     }
   }
 
+  bool _matchesMethod(Map<String, dynamic> payment) {
+    if (_methodFilter == 'all') return true;
+    final method = payment['payment_method']
+        ?.toString()
+        .trim()
+        .toLowerCase()
+        .replaceAll(' ', '_');
+    return method == _methodFilter;
+  }
+
   List<Map<String, dynamic>> get _filteredPayments {
     final query = _searchQuery.trim().toLowerCase();
     return _payments.where((payment) {
       if (!_matchesDate(payment)) return false;
-      if (_methodFilter != 'all') {
-        final method = payment['payment_method']
-            ?.toString()
-            .trim()
-            .toLowerCase()
-            .replaceAll(' ', '_');
-        if (method != _methodFilter) return false;
-      }
+      if (!_matchesMethod(payment)) return false;
       if (query.isEmpty) return true;
       final customer = payment['customers'];
       final values = <String>[
@@ -539,6 +519,13 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
   }
 
   Widget _buildSummaryHeader() {
+    final methodLabel = _methodFilter == 'all'
+        ? 'All payment methods'
+        : _formatPaymentMethod(_methodFilter);
+    final summaryTitle = _methodFilter == 'all'
+        ? 'Team Total • $_selectedPeriodLabel'
+        : '$methodLabel Total • $_selectedPeriodLabel';
+
     return Container(
       width: double.infinity,
 
@@ -598,11 +585,10 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
 
               const SizedBox(width: 12),
 
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'Payments You Received Today',
-
-                  style: TextStyle(
+                  summaryTitle,
+                  style: const TextStyle(
                     color: Colors.white,
 
                     fontSize: 15,
@@ -617,7 +603,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
           const SizedBox(height: 20),
 
           Text(
-            '${CurrencyFormatter.rupees(_todayCollectedBySalesman)}',
+            CurrencyFormatter.rupees(_selectedPaymentsTotal),
 
             style: const TextStyle(
               color: Colors.white,
@@ -633,7 +619,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
           const SizedBox(height: 5),
 
           Text(
-            'Your collection recorded today',
+            'Combined total received by both salesmen',
 
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.76),
@@ -648,9 +634,9 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
             children: [
               Expanded(
                 child: _SummaryMetric(
-                  title: 'Your payments today',
+                  title: 'Payments in selection',
 
-                  value: '$_todayPaymentCountBySalesman',
+                  value: '$_selectedPaymentsCount',
                 ),
               ),
 
@@ -658,9 +644,9 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
 
               Expanded(
                 child: _SummaryMetric(
-                  title: 'Transactions',
+                  title: 'Method filter',
 
-                  value: '${_payments.length}',
+                  value: methodLabel,
                 ),
               ),
             ],
@@ -820,7 +806,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
                     const SizedBox(height: 3),
 
                     Text(
-                      _formatDate(date),
+                      _formatDate(date, payment['created_at']?.toString()),
 
                       style: TextStyle(
                         fontSize: 11,
@@ -1112,7 +1098,7 @@ class _SalesmanPaymentDetailsScreenState
     }
   }
 
-  String _formatDate(String date) {
+  String _formatDate(String date, [String? enteredAt]) {
     final parsed = DateTime.tryParse(date);
 
     if (parsed == null) {
@@ -1120,6 +1106,7 @@ class _SalesmanPaymentDetailsScreenState
     }
 
     final local = parsed.toLocal();
+    final entered = DateTime.tryParse(enteredAt ?? '')?.toLocal() ?? local;
 
     final day = local.day.toString().padLeft(2, '0');
 
@@ -1127,9 +1114,9 @@ class _SalesmanPaymentDetailsScreenState
 
     final year = local.year.toString();
 
-    final hour = local.hour.toString().padLeft(2, '0');
+    final hour = entered.hour.toString().padLeft(2, '0');
 
-    final minute = local.minute.toString().padLeft(2, '0');
+    final minute = entered.minute.toString().padLeft(2, '0');
 
     return '$day/$month/$year • $hour:$minute';
   }
@@ -1262,7 +1249,7 @@ class _SalesmanPaymentDetailsScreenState
                 const SizedBox(height: 6),
 
                 Text(
-                  _formatDate(date),
+                  _formatDate(date, payment['created_at']?.toString()),
 
                   textAlign: TextAlign.center,
 
