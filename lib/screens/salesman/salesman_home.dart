@@ -406,17 +406,15 @@ class _SalesmanHomeState extends State<SalesmanHome> {
     if (result == true) {
       final position =
           await SalesmanVisitService.captureLocationIfAlreadyAllowed();
-      if (position != null) {
-        try {
-          await SalesmanVisitService.recordStatus(
-            customerId: customer.id,
-            status: 'paid',
-            capturedPosition: position,
-          );
-          todaysCustomerStatuses[customer.id] = 'paid';
-        } catch (error) {
-          debugPrint('Could not record payment visit status: $error');
-        }
+      try {
+        await SalesmanVisitService.recordStatus(
+          customerId: customer.id,
+          status: 'paid',
+          capturedPosition: position,
+        );
+        todaysCustomerStatuses[customer.id] = 'paid';
+      } catch (error) {
+        debugPrint('Could not record payment visit status: $error');
       }
     }
 
@@ -504,7 +502,7 @@ class _SalesmanHomeState extends State<SalesmanHome> {
     final remaining = pending;
     final routeLabel = selectedRouteLocations.isEmpty
         ? 'No route assigned'
-        : selectedRouteName ?? selectedRouteLocations.first;
+        : selectedRouteName ?? 'Route name unavailable';
     const purple = Color(0xFF5B3FE4);
     final ink = Theme.of(context).colorScheme.onSurface;
 
@@ -595,6 +593,20 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                           color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
+                      if (selectedRouteLocations.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          selectedRouteLocations.join(', '),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 2),
                       Text(
                         '${route.length} customers',

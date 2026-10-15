@@ -286,18 +286,16 @@ class _SalesmanCustomerDetailsScreenState
                             if (paymentSaved == true) {
                               final visitPosition =
                                   await SalesmanVisitService.captureLocationIfAlreadyAllowed();
-                              if (visitPosition != null) {
-                                try {
-                                  await SalesmanVisitService.recordStatus(
-                                    customerId: widget.customer.id,
-                                    status: 'paid',
-                                    capturedPosition: visitPosition,
-                                  );
-                                } catch (error) {
-                                  debugPrint(
-                                    'Could not record payment visit status: $error',
-                                  );
-                                }
+                              try {
+                                await SalesmanVisitService.recordStatus(
+                                  customerId: widget.customer.id,
+                                  status: 'paid',
+                                  capturedPosition: visitPosition,
+                                );
+                              } catch (error) {
+                                debugPrint(
+                                  'Could not record payment visit status: $error',
+                                );
                               }
                               if (!mounted) return;
                               Navigator.pop(context, true);

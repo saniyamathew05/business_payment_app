@@ -79,8 +79,9 @@ class _OwnerRouteManagementScreenState
         _client.from('profiles').select('id, name, role').order('name'),
         _client
             .from('salesman_daily_route_selections')
-            .select('salesman_id, locations')
-            .eq('route_date', todayKey),
+            .select('salesman_id, locations, route_date')
+            .lte('route_date', todayKey)
+            .order('route_date', ascending: false),
       ]);
       final allProfiles = List<Map<String, dynamic>>.from(results[1] as List);
       final assignmentRows = List<Map<String, dynamic>>.from(
@@ -90,7 +91,9 @@ class _OwnerRouteManagementScreenState
       for (final row in assignmentRows) {
         final id = (row['salesman_id'] ?? '').toString();
         final rawLocations = row['locations'];
-        if (id.isNotEmpty && rawLocations is List) {
+        if (id.isNotEmpty &&
+            rawLocations is List &&
+            !assignments.containsKey(id)) {
           assignments[id] = rawLocations.map((e) => e.toString()).toList();
         }
       }
@@ -289,8 +292,15 @@ class _OwnerRouteManagementScreenState
           '${today.year.toString().padLeft(4, '0')}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
       final locations = _selectedLocations.toList()
         ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-      // Assigns this location set to every selected salesman for today.
-      // Previous dates remain unchanged.
+      // The latest dated assignment remains active until the owner removes it.
+      // Keep the saved named route in sync so salesmen can display its name.
+      await _client
+          .from('salesman_route_templates')
+          .update({
+            'locations': locations,
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
+          })
+          .eq('id', route['id'].toString());
       final assignments = salesmanIds
           .map(
             (salesmanId) => {
@@ -305,12 +315,21 @@ class _OwnerRouteManagementScreenState
           .upsert(assignments, onConflict: 'salesman_id,route_date');
       if (!mounted) return;
       setState(() {
+        final routeIndex = _routes.indexWhere(
+          (item) => item['id'].toString() == route['id'].toString(),
+        );
+        if (routeIndex >= 0) {
+          _routes[routeIndex] = {
+            ..._routes[routeIndex],
+            'locations': locations,
+          };
+        }
         for (final salesmanId in salesmanIds) {
           _todayAssignments[salesmanId] = locations;
         }
       });
       _message(
-        'Today’s locations assigned to ${salesmanIds.length} salesman'
+        'Route assigned to ${salesmanIds.length} salesman'
         '${salesmanIds.length == 1 ? '' : 's'}.',
       );
     } catch (error) {
@@ -330,9 +349,9 @@ class _OwnerRouteManagementScreenState
     final confirm = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Remove today’s route?'),
+        title: const Text('Remove route assignment?'),
         content: Text(
-          'Remove today’s route assignment for $salesmanName? The saved route and past assignments will remain.',
+          'Remove the active route assignment for $salesmanName? The saved route and past assignment records will remain.',
         ),
         actions: [
           TextButton(
@@ -353,14 +372,16 @@ class _OwnerRouteManagementScreenState
       final today = DateTime.now();
       final dateKey =
           '${today.year.toString().padLeft(4, '0')}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
-      await _client
-          .from('salesman_daily_route_selections')
-          .delete()
-          .eq('salesman_id', salesmanId)
-          .eq('route_date', dateKey);
+      // Store an empty assignment for today instead of deleting the last row.
+      // This prevents an older assignment from becoming active again tomorrow.
+      await _client.from('salesman_daily_route_selections').upsert({
+        'salesman_id': salesmanId,
+        'route_date': dateKey,
+        'locations': <String>[],
+      }, onConflict: 'salesman_id,route_date');
       if (!mounted) return;
-      setState(() => _todayAssignments.remove(salesmanId));
-      _message('Today’s route removed for $salesmanName.');
+      setState(() => _todayAssignments[salesmanId] = <String>[]);
+      _message('Route assignment removed for $salesmanName.');
     } catch (error) {
       debugPrint('Remove daily route failed: $error');
       _message('Could not remove today’s route. Please try again.');
@@ -631,13 +652,13 @@ class _OwnerRouteManagementScreenState
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          'Assign this route for today',
+                          'Assign route to salesmen',
                           style: Theme.of(context).textTheme.titleMedium
                               ?.copyWith(fontWeight: FontWeight.w800),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Select one or more salesmen. They will all receive the locations checked above. You can choose another route for different salesmen.',
+                          'Select one or more salesmen. The route stays assigned until you remove it from Salesmen & Assigned Routes. You can choose another route for different salesmen.',
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                         const SizedBox(height: 8),
@@ -646,9 +667,9 @@ class _OwnerRouteManagementScreenState
                           final currentLocations =
                               _todayAssignments[salesmanId];
                           final subtitle = currentLocations == null
-                              ? 'Not assigned today'
+                              ? 'No active route assignment'
                               : currentLocations.isEmpty
-                              ? 'No locations assigned today'
+                              ? 'No active route assignment'
                               : 'Currently assigned: ${currentLocations.join(' → ')}';
                           return CheckboxListTile(
                             contentPadding: EdgeInsets.zero,
@@ -714,7 +735,7 @@ class _OwnerRouteManagementScreenState
         ),
         const SizedBox(height: 8),
         const Text(
-          'Assignments are stored for today. Open Places & Routes to create or edit a named route and assign it.',
+          'Assignments stay active until you remove them. Open Places & Routes to create or edit a named route and assign it.',
         ),
         const SizedBox(height: 12),
         if (_salesmen.isEmpty)
@@ -745,7 +766,7 @@ class _OwnerRouteManagementScreenState
               }
             }
             final subtitle = assignedLocations.isEmpty
-                ? 'No route assigned for today'
+                ? 'No active route assignment'
                 : '${assignedRouteName == null ? 'Assigned locations' : 'Route: $assignedRouteName'}\n${assignedLocations.join(' → ')}';
             return Card(
               child: ListTile(
@@ -756,7 +777,7 @@ class _OwnerRouteManagementScreenState
                 trailing: assignedLocations.isEmpty
                     ? null
                     : IconButton(
-                        tooltip: 'Remove today’s route assignment',
+                        tooltip: 'Remove active route assignment',
                         onPressed: _saving
                             ? null
                             : () => _removeTodayAssignment(

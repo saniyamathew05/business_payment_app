@@ -22,6 +22,7 @@ class _SalesmanVisitScreenState extends State<SalesmanVisitScreen> {
   bool _loading = true;
   bool _savingRoute = false;
   String? _error;
+  String? _routeName;
   List<String> _routeLocations = <String>[];
   Map<String, String> _statuses = <String, String>{};
   final Set<String> _draftLocations = <String>{};
@@ -76,9 +77,19 @@ class _SalesmanVisitScreenState extends State<SalesmanVisitScreen> {
         SalesmanVisitService.loadTodayRoute(),
         SalesmanVisitService.loadTodayStatuses(),
       ]);
+      final routeLocations = List<String>.from(values[0] as List<String>);
+      String? routeName;
+      try {
+        routeName = await SalesmanVisitService.loadRouteNameForLocations(
+          routeLocations,
+        );
+      } catch (error) {
+        debugPrint('Could not load assigned route name: $error');
+      }
       if (!mounted) return;
       setState(() {
-        _routeLocations = List<String>.from(values[0] as List<String>);
+        _routeLocations = routeLocations;
+        _routeName = routeName;
         _statuses = Map<String, String>.from(values[1] as Map<String, String>);
         _draftLocations
           ..clear()
@@ -183,14 +194,16 @@ class _SalesmanVisitScreenState extends State<SalesmanVisitScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Daily route',
+                            _routeName ?? 'Daily route',
                             style: theme.textTheme.titleLarge?.copyWith(
                               fontWeight: FontWeight.w800,
                             ),
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            'Choose the locations you plan to visit today. Only customers in these locations appear below.',
+                            _routeName == null
+                                ? 'Choose the locations you plan to visit today. Only customers in these locations appear below.'
+                                : 'Your assigned route for today. Only customers in these locations appear below.',
                             style: theme.textTheme.bodyMedium,
                           ),
                           const SizedBox(height: 14),

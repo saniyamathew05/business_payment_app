@@ -43,9 +43,11 @@ class SalesmanVisitService {
     final userId = _requireUserId();
     final row = await _client
         .from('salesman_daily_route_selections')
-        .select('locations')
+        .select('locations, route_date')
         .eq('salesman_id', userId)
-        .eq('route_date', _todayKey())
+        .lte('route_date', _todayKey())
+        .order('route_date', ascending: false)
+        .limit(1)
         .maybeSingle();
 
     if (row == null) return <String>[];
@@ -59,36 +61,49 @@ class SalesmanVisitService {
   static Future<String?> loadRouteNameForLocations(
     List<String> assignedLocations,
   ) async {
-    final normalizedAssigned =
-        assignedLocations
-            .map((location) => location.trim().toLowerCase())
-            .where((location) => location.isNotEmpty)
-            .toList()
-          ..sort();
-    if (normalizedAssigned.isEmpty) return null;
-
     final routes = await _client
         .from('salesman_route_templates')
         .select('route_name, locations');
+    return _findRouteName(
+      List<Map<String, dynamic>>.from(routes),
+      assignedLocations,
+    );
+  }
+
+  static String? _findRouteName(
+    List<Map<String, dynamic>> routes,
+    List<String> assignedLocations,
+  ) {
+    final assigned = assignedLocations
+        .map((location) => location.trim().toLowerCase())
+        .where((location) => location.isNotEmpty)
+        .toSet();
+    if (assigned.isEmpty) return null;
+
+    final matches = <({String name, int extraLocations})>[];
     for (final route in routes) {
       final rawLocations = route['locations'];
       if (rawLocations is! List) continue;
-      final routeLocations =
-          rawLocations
-              .map((location) => location.toString().trim().toLowerCase())
-              .where((location) => location.isNotEmpty)
-              .toList()
-            ..sort();
-      if (routeLocations.length != normalizedAssigned.length) continue;
-      if (List.generate(
-        routeLocations.length,
-        (index) => routeLocations[index] == normalizedAssigned[index],
-      ).every((matches) => matches)) {
-        final name = route['route_name']?.toString().trim();
-        return name == null || name.isEmpty ? null : name;
-      }
+      final routeLocations = rawLocations
+          .map((location) => location.toString().trim().toLowerCase())
+          .where((location) => location.isNotEmpty)
+          .toSet();
+      if (!assigned.every(routeLocations.contains)) continue;
+
+      final name = route['route_name']?.toString().trim();
+      if (name == null || name.isEmpty) continue;
+      matches.add((
+        name: name,
+        extraLocations: routeLocations.length - assigned.length,
+      ));
     }
-    return null;
+
+    if (matches.isEmpty) return null;
+    matches.sort((a, b) {
+      final bySpecificity = a.extraLocations.compareTo(b.extraLocations);
+      return bySpecificity != 0 ? bySpecificity : a.name.compareTo(b.name);
+    });
+    return matches.first.name;
   }
 
   static Future<void> saveTodayRoute(List<String> locations) async {
@@ -101,24 +116,19 @@ class SalesmanVisitService {
             .toList()
           ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
 
-    // Delete today's previous selection before inserting the replacement.
-    // This does not affect historical route dates.
-    await _client
-        .from('salesman_daily_route_selections')
-        .delete()
-        .eq('salesman_id', userId)
-        .eq('route_date', _todayKey());
-
     if (cleaned.isNotEmpty) {
-      await _client.from('salesman_daily_route_selections').insert({
+      await _client.from('salesman_daily_route_selections').upsert({
         'salesman_id': userId,
         'route_date': _todayKey(),
         'locations': cleaned,
-      });
+      }, onConflict: 'salesman_id,route_date');
     }
   }
 
   static Future<Map<String, String>> loadTodayStatuses() async {
+    final now = DateTime.now();
+    final startOfToday = DateTime(now.year, now.month, now.day);
+    final startOfTomorrow = startOfToday.add(const Duration(days: 1));
     final rows = await _client
         .from('salesman_customer_daily_status')
         .select('customer_id, status')
@@ -132,6 +142,19 @@ class SalesmanVisitService {
         result[customerId] = status;
       }
     }
+
+    // Payments saved before visit-status recording was fixed (or recorded by
+    // the owner/another salesman) still count as a completed visit today.
+    final payments = await _client
+        .from('payments')
+        .select('customer_id')
+        .gte('transaction_date', startOfToday.toUtc().toIso8601String())
+        .lt('transaction_date', startOfTomorrow.toUtc().toIso8601String());
+    for (final payment in payments) {
+      final customerId = payment['customer_id']?.toString();
+      if (customerId != null) result[customerId] = 'paid';
+    }
+
     return result;
   }
 
@@ -145,8 +168,9 @@ class SalesmanVisitService {
           .order('name'),
       _client
           .from('salesman_daily_route_selections')
-          .select('salesman_id, locations')
-          .eq('route_date', today),
+          .select('salesman_id, locations, route_date')
+          .lte('route_date', today)
+          .order('route_date', ascending: false),
       _client
           .from('salesman_customer_daily_status')
           .select('entered_by, customer_id')
@@ -163,7 +187,9 @@ class SalesmanVisitService {
     for (final row in routeRows) {
       final salesmanId = row['salesman_id']?.toString();
       final locations = row['locations'];
-      if (salesmanId != null && locations is List) {
+      if (salesmanId != null &&
+          locations is List &&
+          !routesBySalesman.containsKey(salesmanId)) {
         routesBySalesman[salesmanId] = locations
             .map((location) => location.toString().trim())
             .where((location) => location.isNotEmpty)
@@ -185,30 +211,7 @@ class SalesmanVisitService {
     return profiles.map((profile) {
       final salesmanId = profile['id'].toString();
       final locations = routesBySalesman[salesmanId] ?? const <String>[];
-      final normalizedLocations =
-          locations.map((location) => location.toLowerCase()).toList()..sort();
-      String? routeName;
-      if (normalizedLocations.isNotEmpty) {
-        for (final template in templates) {
-          final rawLocations = template['locations'];
-          if (rawLocations is! List) continue;
-          final templateLocations =
-              rawLocations
-                  .map((location) => location.toString().trim().toLowerCase())
-                  .where((location) => location.isNotEmpty)
-                  .toList()
-                ..sort();
-          if (templateLocations.length == normalizedLocations.length &&
-              List.generate(
-                templateLocations.length,
-                (index) =>
-                    templateLocations[index] == normalizedLocations[index],
-              ).every((matches) => matches)) {
-            routeName = template['route_name']?.toString();
-            break;
-          }
-        }
-      }
+      final routeName = _findRouteName(templates, locations);
 
       return SalesmanDailyActivity(
         salesmanId: salesmanId,
@@ -279,10 +282,10 @@ class SalesmanVisitService {
       throw ArgumentError.value(status, 'status', 'Expected paid or rejected.');
     }
 
-    // A no-payment outcome is still valid without GPS. Payment outcomes keep
-    // the existing location requirement when no position was supplied.
-    final position = capturedPosition ??
-        (status == 'paid' ? await captureLocation() : null);
+    // GPS is optional for either outcome. Preserve an already captured
+    // position for the visit audit, but never block recording the visit on it.
+    final position =
+        capturedPosition ?? await captureLocationIfAlreadyAllowed();
     await _client.rpc(
       'record_salesman_customer_status',
       params: {

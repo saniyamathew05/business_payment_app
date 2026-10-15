@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../services/transaction_service.dart';
 import '../../services/currency_formatter.dart';
+import '../../services/transaction_service.dart';
 
 class SalesmanPaymentsScreen extends StatefulWidget {
   const SalesmanPaymentsScreen({super.key});
@@ -20,22 +20,15 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
   List<Map<String, dynamic>> _payments = [];
 
   bool _isLoading = true;
+  String? _loadError;
 
-  double get _totalCollected {
-    return _payments.fold(0.0, (total, payment) {
-      final amountReceived =
-          (payment['amount_received'] as num?)?.toDouble() ??
-          ((payment['amount'] as num?)?.toDouble() ?? 0) -
-              ((payment['discount'] as num?)?.toDouble() ?? 0);
-
-      return total + amountReceived;
-    });
-  }
-
-  double get _todayCollected {
+  double get _todayCollectedBySalesman {
     final now = DateTime.now();
+    final currentUserId = _supabase.auth.currentUser?.id;
+    if (currentUserId == null) return 0;
 
     return _payments.fold(0.0, (total, payment) {
+      if (payment['user_id']?.toString() != currentUserId) return total;
       final dateString = payment['transaction_date'] as String?;
 
       if (dateString == null) {
@@ -63,6 +56,24 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
     });
   }
 
+  int get _todayPaymentCountBySalesman {
+    final now = DateTime.now();
+    final currentUserId = _supabase.auth.currentUser?.id;
+    if (currentUserId == null) return 0;
+
+    return _payments.where((payment) {
+      if (payment['user_id']?.toString() != currentUserId) return false;
+      final dateString = payment['transaction_date'] as String?;
+      final date = dateString == null
+          ? null
+          : DateTime.tryParse(dateString)?.toLocal();
+      return date != null &&
+          date.year == now.year &&
+          date.month == now.month &&
+          date.day == now.day;
+    }).length;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -79,61 +90,34 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
 
     try {
       final user = _supabase.auth.currentUser;
+      if (user == null) throw Exception('You are not logged in.');
 
-      if (user == null) {
-        throw Exception('You are not logged in.');
-      }
-
+      // Read payment rows directly so older records remain visible even when
+      // their customer is inactive. The profiles relationship is intentionally
+      // omitted because salesman accounts cannot read profile names via RLS.
       final response = await _supabase
           .from('payments')
           .select('''
-
             id,
-
             amount,
-
             discount,
-
             amount_received,
-
             previous_balance,
-
             remaining_balance,
-
             transaction_date,
-
             notes,
-
             signature_path,
-
             user_id,
-
             customer_id,
-
-            customers (
-
-              business_name,
-
-              location,
-
-              phone
-
-            ),
-
-            profiles (
-
-              name
-
-            )
-
-            ''')
+            customers (business_name, location, phone)
+          ''')
           .order('transaction_date', ascending: false);
 
       if (!mounted) return;
 
       setState(() {
         _payments = List<Map<String, dynamic>>.from(response);
-
+        _loadError = null;
         _isLoading = false;
       });
     } catch (error) {
@@ -141,6 +125,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
 
       setState(() {
         _isLoading = false;
+        _loadError = error.toString();
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -250,6 +235,15 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
 
         children: [
           const SizedBox(height: 90),
+
+          if (_loadError != null) ...[
+            Text(
+              'Could not load payments. Pull down to retry.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+            const SizedBox(height: 12),
+          ],
 
           _EmptyPaymentsState(onRefresh: _loadPayments),
         ],
@@ -373,7 +367,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
 
               const Expanded(
                 child: Text(
-                  'Total Payments Received',
+                  'Payments You Received Today',
 
                   style: TextStyle(
                     color: Colors.white,
@@ -390,7 +384,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
           const SizedBox(height: 20),
 
           Text(
-            '${CurrencyFormatter.rupees(_totalCollected)}',
+            '${CurrencyFormatter.rupees(_todayCollectedBySalesman)}',
 
             style: const TextStyle(
               color: Colors.white,
@@ -406,7 +400,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
           const SizedBox(height: 5),
 
           Text(
-            'Across all recorded payments',
+            'Your collection recorded today',
 
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.76),
@@ -421,9 +415,9 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
             children: [
               Expanded(
                 child: _SummaryMetric(
-                  title: 'Today',
+                  title: 'Your payments today',
 
-                  value: '${CurrencyFormatter.rupees(_todayCollected)}',
+                  value: '$_todayPaymentCountBySalesman',
                 ),
               ),
 
