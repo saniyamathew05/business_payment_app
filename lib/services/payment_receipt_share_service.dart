@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/customer.dart';
 import '../models/transaction.dart';
@@ -8,6 +9,25 @@ import 'transaction_service.dart';
 
 /// Shared by owner and salesman customer details so both attach the receipt.
 class PaymentReceiptShareService {
+  static Future<void> openCustomerChat(Customer customer) async {
+    final raw = customer.phone.trim();
+    var phone = raw.replaceAll(RegExp(r'[^0-9]'), '');
+    if (phone.startsWith('00')) phone = phone.substring(2);
+    // Local customer numbers use India's country code, as in the existing app.
+    if (!raw.startsWith('+') && !raw.startsWith('00') && phone.length == 10) {
+      phone = '91$phone';
+    }
+    if (phone.length < 7 || phone.length > 15) {
+      throw StateError('Enter a valid customer phone number first.');
+    }
+    if (!await launchUrl(
+      Uri.https('wa.me', '/$phone'),
+      mode: LaunchMode.externalApplication,
+    )) {
+      throw StateError('Could not open WhatsApp.');
+    }
+  }
+
   static Future<void> shareLatest({
     required BuildContext context,
     required Customer customer,

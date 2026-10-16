@@ -82,7 +82,7 @@ class PaymentReceiptService {
 
     _drawText(
       canvas,
-      'BUSINESS PAYMENT',
+      'ABS controls',
       76,
       78,
       680,

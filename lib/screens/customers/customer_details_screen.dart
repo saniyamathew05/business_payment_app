@@ -450,6 +450,17 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   }
 
   Future<void> _whatsappCustomer() async {
+    try {
+      await PaymentReceiptShareService.openCustomerChat(_displayCustomer);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open WhatsApp: $error')),
+      );
+    }
+  }
+
+  Future<void> _shareCustomerReceipt() async {
     if (_sharingReceipt) return;
     setState(() => _sharingReceipt = true);
     try {
@@ -2093,15 +2104,29 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                               height: 28,
                                             ),
                                         padding: EdgeInsets.zero,
-                                        tooltip:
-                                            'Review and share payment receipt',
-                                        onPressed: _sharingReceipt
-                                            ? null
-                                            : _whatsappCustomer,
+                                        tooltip: 'Open customer WhatsApp chat',
+                                        onPressed: _whatsappCustomer,
                                         icon: const Icon(
                                           Icons.chat_outlined,
                                           size: 16,
                                           color: Color(0xFF159A69),
+                                        ),
+                                      ),
+                                      IconButton(
+                                        tooltip: 'Share payment receipt',
+                                        visualDensity: VisualDensity.compact,
+                                        constraints:
+                                            const BoxConstraints.tightFor(
+                                              width: 30,
+                                              height: 28,
+                                            ),
+                                        padding: EdgeInsets.zero,
+                                        onPressed: _sharingReceipt
+                                            ? null
+                                            : _shareCustomerReceipt,
+                                        icon: const Icon(
+                                          Icons.receipt_long_outlined,
+                                          size: 16,
                                         ),
                                       ),
                                     ],
@@ -2476,9 +2501,16 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 label: const Text('Call'),
               ),
               OutlinedButton.icon(
-                onPressed: _sharingReceipt ? null : _whatsappCustomer,
+                onPressed: _whatsappCustomer,
                 icon: const Icon(Icons.chat_outlined, size: 16),
                 label: const Text('WhatsApp'),
+              ),
+              OutlinedButton.icon(
+                onPressed: _sharingReceipt ? null : _shareCustomerReceipt,
+                icon: const Icon(Icons.receipt_long_outlined, size: 16),
+                label: Text(
+                  _sharingReceipt ? 'Preparing receipt…' : 'Share receipt',
+                ),
               ),
               if (_isOwner)
                 OutlinedButton.icon(

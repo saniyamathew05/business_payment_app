@@ -161,6 +161,14 @@ class _SalesmanCustomerDetailsScreenState
   }
 
   Future<void> _messageOnWhatsApp() async {
+    try {
+      await PaymentReceiptShareService.openCustomerChat(_customer);
+    } catch (error) {
+      if (mounted) _showPhoneMessage('Could not open WhatsApp: $error');
+    }
+  }
+
+  Future<void> _shareReceipt() async {
     if (_preparingReceiptShare) return;
     setState(() => _preparingReceiptShare = true);
     try {
@@ -480,24 +488,28 @@ class _SalesmanCustomerDetailsScreenState
                                 icon: const Icon(Icons.call_outlined, size: 19),
                               ),
                               IconButton(
-                                tooltip: 'Review and share receipt on WhatsApp',
+                                tooltip: 'Open customer WhatsApp chat',
                                 visualDensity: VisualDensity.compact,
-                                onPressed:
-                                    _customer.phone.trim().isEmpty ||
-                                        _preparingReceiptShare
+                                onPressed: _customer.phone.trim().isEmpty
                                     ? null
                                     : _messageOnWhatsApp,
-                                icon: _preparingReceiptShare
-                                    ? const SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : const Icon(Icons.chat_outlined, size: 19),
+                                icon: const Icon(Icons.chat_outlined, size: 19),
                               ),
                             ],
+                          ),
+                          TextButton.icon(
+                            onPressed: _preparingReceiptShare
+                                ? null
+                                : _shareReceipt,
+                            icon: const Icon(
+                              Icons.receipt_long_outlined,
+                              size: 18,
+                            ),
+                            label: Text(
+                              _preparingReceiptShare
+                                  ? 'Preparing receipt…'
+                                  : 'Share receipt',
+                            ),
                           ),
                         ],
                       ),
