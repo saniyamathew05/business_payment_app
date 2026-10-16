@@ -23,9 +23,7 @@ class OwnerReportsScreen extends StatelessWidget {
           valueListenable: TransactionService.dataVersion,
 
           builder: (context, transactionVersion, _) {
-            return _ReportsContent(
-              key: ValueKey('${customerVersion}_$transactionVersion'),
-            );
+            return _ReportsContent();
           },
         );
       },
@@ -34,7 +32,7 @@ class OwnerReportsScreen extends StatelessWidget {
 }
 
 class _ReportsContent extends StatefulWidget {
-  const _ReportsContent({super.key});
+  const _ReportsContent();
 
   @override
   State<_ReportsContent> createState() => _ReportsContentState();
