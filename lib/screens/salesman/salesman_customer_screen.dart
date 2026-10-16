@@ -2,6 +2,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/customer.dart';
 
@@ -13,6 +15,7 @@ import '../../services/transaction_service.dart';
 import '../../services/currency_formatter.dart';
 import '../../services/salesman_visit_service.dart';
 import '../../services/ledger_user_name_service.dart';
+import '../../services/payment_receipt_service.dart';
 
 class SalesmanCustomerDetailsScreen extends StatefulWidget {
   final Customer customer;
@@ -28,6 +31,7 @@ class _SalesmanCustomerDetailsScreenState
     extends State<SalesmanCustomerDetailsScreen> {
   List<Map<String, dynamic>> _ledgerEntries = const [];
   String _historyFilter = 'All';
+  bool _preparingReceiptShare = false;
 
   List<Map<String, dynamic>> get _saleEntries => _ledgerEntries
       .where((entry) => entry['entry_type']?.toString() == 'purchase')
@@ -71,6 +75,161 @@ class _SalesmanCustomerDetailsScreenState
     setState(() => _ledgerEntries = entries);
   }
 
+  Future<void> _callCustomer() async {
+    final phone = widget.customer.phone.trim();
+    if (phone.isEmpty) {
+      _showPhoneMessage('This customer has no phone number.');
+      return;
+    }
+    final dialable = phone.replaceAll(RegExp(r'[^0-9+]'), '');
+    try {
+      final launched = await launchUrl(Uri(scheme: 'tel', path: dialable));
+      if (!launched && mounted) {
+        _showPhoneMessage('Could not open the phone app.');
+      }
+    } catch (_) {
+      if (mounted) _showPhoneMessage('Could not open the phone app.');
+    }
+  }
+
+  Future<void> _messageOnWhatsApp() async {
+    if (widget.customer.phone.trim().isEmpty) {
+      _showPhoneMessage('This customer has no phone number.');
+      return;
+    }
+
+    final payments = _ledgerEntries
+        .where((entry) => entry['entry_type']?.toString() == 'payment')
+        .toList();
+    if (payments.isEmpty) {
+      _showPhoneMessage('There is no payment receipt to share yet.');
+      return;
+    }
+
+    payments.sort((a, b) {
+      final aDate = DateTime.tryParse(a['transaction_date']?.toString() ?? '');
+      final bDate = DateTime.tryParse(b['transaction_date']?.toString() ?? '');
+      return (bDate ?? DateTime(0)).compareTo(aDate ?? DateTime(0));
+    });
+    final entry = payments.first;
+    final signaturePath = entry['signature_path']?.toString();
+    if (signaturePath == null || signaturePath.isEmpty) {
+      _showPhoneMessage('The latest payment has no saved signature.');
+      return;
+    }
+
+    setState(() => _preparingReceiptShare = true);
+    try {
+      final signature = await TransactionService.downloadSignature(
+        signaturePath,
+      );
+      if (signature == null) {
+        throw Exception('Could not load the payment signature.');
+      }
+
+      final transactionDate =
+          DateTime.tryParse(entry['transaction_date']?.toString() ?? '') ??
+          DateTime.now();
+      final amount = (entry['amount'] as num?)?.toDouble() ?? 0;
+      final discount = (entry['discount'] as num?)?.toDouble() ?? 0;
+      final profile = entry['profiles'];
+      final receivedBy = profile is Map
+          ? profile['name']?.toString() ?? 'Salesman'
+          : 'Salesman';
+      final payment = PaymentTransaction(
+        id: entry['id']?.toString() ?? '',
+        customerId: widget.customer.id,
+        customerName: widget.customer.businessName,
+        amount: amount,
+        discount: discount,
+        amountReceived:
+            (entry['amount_received'] as num?)?.toDouble() ??
+            (amount - discount),
+        previousBalance:
+            (entry['balance_before'] as num?)?.toDouble() ??
+            (entry['previous_balance'] as num?)?.toDouble() ??
+            0,
+        remainingBalance:
+            (entry['balance_after'] as num?)?.toDouble() ??
+            (entry['remaining_balance'] as num?)?.toDouble() ??
+            0,
+        transactionDate: transactionDate,
+        createdAt: DateTime.tryParse(entry['created_at']?.toString() ?? ''),
+        notes: entry['notes']?.toString() ?? '',
+        signature: signature,
+        signaturePath: signaturePath,
+        receivedBy: receivedBy,
+        paymentMethod: entry['payment_method']?.toString() ?? 'cash',
+        paymentMethodNote: entry['payment_method_note']?.toString() ?? '',
+        transactionType: 'payment_received',
+      );
+      final image = await PaymentReceiptService.buildReceiptImage(
+        payment,
+        signatureBytes: signature,
+      );
+      if (!mounted) return;
+      setState(() => _preparingReceiptShare = false);
+      final shouldShare = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Review payment receipt'),
+          content: SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Image.memory(image, fit: BoxFit.contain),
+                  const SizedBox(height: 8),
+                  Text('Share with ${widget.customer.phone} on WhatsApp.'),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              icon: const Icon(Icons.share_outlined),
+              label: const Text('Continue to share'),
+            ),
+          ],
+        ),
+      );
+      if (shouldShare != true || !mounted) return;
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [
+            XFile.fromData(
+              image,
+              name: 'payment-receipt-${widget.customer.id}.png',
+              mimeType: 'image/png',
+            ),
+          ],
+          text: 'Payment receipt for ${widget.customer.businessName}',
+          subject: 'Payment receipt',
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        _showPhoneMessage('Could not prepare receipt: $error');
+      }
+    } finally {
+      if (mounted && _preparingReceiptShare) {
+        setState(() => _preparingReceiptShare = false);
+      }
+    }
+  }
+
+  void _showPhoneMessage(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   String _recordedBy(Map<String, dynamic> entry) {
     final profile = entry['profiles'];
     if (profile is Map) {
@@ -81,6 +240,171 @@ class _SalesmanCustomerDetailsScreenState
             Supabase.instance.client.auth.currentUser?.id
         ? 'You'
         : 'Another team member';
+  }
+
+  Future<void> _recordSalesReturn(double currentBalance) async {
+    final amountController = TextEditingController();
+    final notesController = TextEditingController();
+    var selectedDate = DateTime.now();
+    var isSaving = false;
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Return Products'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Current amount due: ${CurrencyFormatter.rupees(currentBalance)}',
+                  ),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: amountController,
+                  enabled: !isSaving,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Return amount',
+                    prefixText: '₹ ',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                InkWell(
+                  onTap: isSaving
+                      ? null
+                      : () async {
+                          final picked = await showDatePicker(
+                            context: dialogContext,
+                            initialDate: selectedDate,
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime(2100),
+                          );
+                          if (picked != null) {
+                            setDialogState(() {
+                              selectedDate = DateTime(
+                                picked.year,
+                                picked.month,
+                                picked.day,
+                              );
+                            });
+                          }
+                        },
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Return date',
+                      prefixIcon: Icon(Icons.calendar_today_outlined),
+                    ),
+                    child: Text(
+                      '${selectedDate.day.toString().padLeft(2, '0')}/'
+                      '${selectedDate.month.toString().padLeft(2, '0')}/'
+                      '${selectedDate.year}',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: notesController,
+                  enabled: !isSaving,
+                  maxLines: 2,
+                  decoration: const InputDecoration(labelText: 'Notes'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isSaving
+                  ? null
+                  : () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: isSaving
+                  ? null
+                  : () async {
+                      final amount = double.tryParse(
+                        amountController.text.trim().replaceAll(',', ''),
+                      );
+                      if (amount == null || amount <= 0) {
+                        ScaffoldMessenger.of(dialogContext).showSnackBar(
+                          const SnackBar(
+                            content: Text('Enter a valid return amount.'),
+                          ),
+                        );
+                        return;
+                      }
+                      if (amount > currentBalance) {
+                        ScaffoldMessenger.of(dialogContext).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Return cannot exceed the current due of '
+                              '${CurrencyFormatter.rupees(currentBalance)}.',
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+
+                      setDialogState(() => isSaving = true);
+                      try {
+                        await Supabase.instance.client.rpc(
+                          'record_return',
+                          params: {
+                            'p_customer_id': widget.customer.id,
+                            'p_amount': amount,
+                            'p_notes': notesController.text.trim().isEmpty
+                                ? null
+                                : notesController.text.trim(),
+                            'p_transaction_date': selectedDate
+                                .toUtc()
+                                .toIso8601String(),
+                          },
+                        );
+                        if (dialogContext.mounted) {
+                          Navigator.of(dialogContext).pop(true);
+                        }
+                      } catch (error) {
+                        if (!dialogContext.mounted) return;
+                        setDialogState(() => isSaving = false);
+                        ScaffoldMessenger.of(dialogContext).showSnackBar(
+                          SnackBar(
+                            content: Text('Could not record return: $error'),
+                          ),
+                        );
+                      }
+                    },
+              child: isSaving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Record return'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    amountController.dispose();
+    notesController.dispose();
+    if (saved != true || !mounted) return;
+
+    await Future.wait([
+      TransactionService.loadCustomerBalances(),
+      _loadSaleHistory(),
+    ]);
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Sales return recorded.')));
   }
 
   @override
@@ -181,7 +505,41 @@ class _SalesmanCustomerDetailsScreenState
 
                               const SizedBox(width: 5),
 
-                              Text(widget.customer.phone),
+                              Expanded(
+                                child: Text(
+                                  widget.customer.phone.isEmpty
+                                      ? 'No phone number'
+                                      : widget.customer.phone,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Call customer',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: widget.customer.phone.trim().isEmpty
+                                    ? null
+                                    : _callCustomer,
+                                icon: const Icon(Icons.call_outlined, size: 19),
+                              ),
+                              IconButton(
+                                tooltip: 'Review and share receipt on WhatsApp',
+                                visualDensity: VisualDensity.compact,
+                                onPressed:
+                                    widget.customer.phone.trim().isEmpty ||
+                                        _preparingReceiptShare
+                                    ? null
+                                    : _messageOnWhatsApp,
+                                icon: _preparingReceiptShare
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.chat_outlined, size: 19),
+                              ),
                             ],
                           ),
                         ],
@@ -332,6 +690,19 @@ class _SalesmanCustomerDetailsScreenState
                         fontWeight: FontWeight.bold,
                       ),
                     ),
+                  ),
+                ),
+
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: OutlinedButton.icon(
+                    onPressed: balance <= 0
+                        ? null
+                        : () => _recordSalesReturn(balance),
+                    icon: const Icon(Icons.assignment_return_outlined),
+                    label: const Text('Record Sales Return'),
                   ),
                 ),
 
@@ -1155,7 +1526,7 @@ class _PaymentCardState extends State<_PaymentCard> {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(_formatDate(payment.transactionDate, payment.createdAt)),
+            Text(_formatDate(payment.transactionDate)),
             const SizedBox(height: 3),
             Text(
               'Method: ${_displayPaymentMethod(payment.paymentMethod)}'
@@ -1313,14 +1684,13 @@ class _PaymentCardState extends State<_PaymentCard> {
     );
   }
 
-  String _formatDate(DateTime date, DateTime? enteredAt) {
+  String _formatDate(DateTime date) {
     final localDate = date.toLocal();
-    final localTime = (enteredAt ?? date).toLocal();
     return '${localDate.day.toString().padLeft(2, '0')}/'
         '${localDate.month.toString().padLeft(2, '0')}/'
         '${localDate.year}  '
-        '${localTime.hour.toString().padLeft(2, '0')}:'
-        '${localTime.minute.toString().padLeft(2, '0')}';
+        '${localDate.hour.toString().padLeft(2, '0')}:'
+        '${localDate.minute.toString().padLeft(2, '0')}';
   }
 
   String _displayPaymentMethod(String method) {

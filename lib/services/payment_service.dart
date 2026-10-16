@@ -79,8 +79,12 @@ class PaymentService {
       throw Exception('Signature path is missing.');
     }
 
+    // Keep the timestamp from the phone where the payment was entered. The
+    // same UTC instant is stored in Supabase and rendered in each device's
+    // local timezone.
+    final enteredAt = DateTime.now();
     final response = await _supabase.rpc(
-      'record_payment',
+      'record_payment_with_phone_time',
       params: {
         'p_customer_id': customerId.trim(),
         'p_amount': amount,
@@ -92,6 +96,7 @@ class PaymentService {
         'p_payment_method_note': paymentMethodNote.trim().isEmpty
             ? null
             : paymentMethodNote.trim(),
+        'p_entered_at': enteredAt.toUtc().toIso8601String(),
       },
     );
 
@@ -118,7 +123,7 @@ class PaymentService {
       remainingBalance: (inserted['remaining_balance'] as num).toDouble(),
       transactionDate: DateTime.parse(inserted['transaction_date'] as String),
       createdAt: inserted['created_at'] == null
-          ? DateTime.now()
+          ? enteredAt
           : DateTime.parse(inserted['created_at'] as String),
       notes: (inserted['notes'] as String?) ?? '',
       signature: signature,

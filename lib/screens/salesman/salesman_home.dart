@@ -1695,9 +1695,19 @@ class _SalesmanHomeState extends State<SalesmanHome> {
 
   @override
   Widget build(BuildContext context) {
-    final pages = [_buildHomeTab(), _buildCustomersTab(), _buildMoreTab()];
+    final pages = [
+      _buildHomeTab(),
+      _buildCustomersTab(),
+      const SalesmanPaymentsScreen(),
+      _buildMoreTab(),
+    ];
 
-    final titles = ['LedgerPro', "Today's Customers", 'Profile'];
+    final titles = [
+      'LedgerPro',
+      "Today's Customers",
+      'Payments Received',
+      'Profile',
+    ];
 
     return Scaffold(
       appBar: AppBar(
@@ -1793,6 +1803,14 @@ class _SalesmanHomeState extends State<SalesmanHome> {
             selectedIcon: Icon(Icons.people_rounded),
 
             label: 'Customers',
+          ),
+
+          NavigationDestination(
+            icon: Icon(Icons.payments_outlined),
+
+            selectedIcon: Icon(Icons.payments_rounded),
+
+            label: 'Payments',
           ),
 
           NavigationDestination(

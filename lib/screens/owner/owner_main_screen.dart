@@ -15,6 +15,7 @@ import '../../models/transaction.dart';
 import '../../services/customer_service.dart';
 
 import '../../services/transaction_service.dart';
+import '../../services/payment_method_breakdown.dart';
 
 import '../settings/settings_screen.dart';
 
@@ -341,9 +342,7 @@ class _OwnerMainScreenState extends State<OwnerMainScreen> {
           }
           return Scaffold(
             body: _showMobileRoutes
-                ? const OwnerRouteManagementScreen(
-                    page: OwnerRoutePage.places,
-                  )
+                ? const OwnerRouteManagementScreen(page: OwnerRoutePage.places)
                 : IndexedStack(index: _selectedIndex, children: pages),
             bottomNavigationBar: NavigationBar(
               selectedIndex: _showMobileRoutes ? 4 : _selectedIndex,
@@ -1990,6 +1989,18 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
 
   String _money(double value) => '₹${value.abs().toStringAsFixed(2)}';
 
+  double _amountForCurrentMethod(PaymentTransaction payment) {
+    if (_methodFilter == 'all') return payment.amountReceived;
+    final hasSplit = PaymentMethodBreakdown.parse(
+      payment.paymentMethodNote,
+    ).isNotEmpty;
+    return PaymentMethodBreakdown.amountFor(
+      note: payment.paymentMethodNote,
+      method: _methodFilter,
+      fallbackAmount: hasSplit ? 0 : payment.amountReceived,
+    );
+  }
+
   bool _matchesDate(PaymentTransaction payment) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -2028,7 +2039,13 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
           ' ',
           '_',
         );
-        if (method != _methodFilter) return false;
+        if (method != _methodFilter &&
+            !PaymentMethodBreakdown.includes(
+              payment.paymentMethodNote,
+              _methodFilter,
+            )) {
+          return false;
+        }
       }
       if (_searchQuery.isEmpty) return true;
       return payment.customerName.toLowerCase().contains(_searchQuery) ||
@@ -2316,7 +2333,20 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
           final payments = _filteredPayments();
           final total = payments.fold<double>(
             0,
-            (sum, payment) => sum + payment.amountReceived,
+            (sum, payment) =>
+                sum +
+                (_methodFilter == 'all'
+                    ? payment.amountReceived
+                    : PaymentMethodBreakdown.amountFor(
+                        note: payment.paymentMethodNote,
+                        method: _methodFilter,
+                        fallbackAmount:
+                            PaymentMethodBreakdown.parse(
+                              payment.paymentMethodNote,
+                            ).isEmpty
+                            ? payment.amountReceived
+                            : 0,
+                      )),
           );
           return RefreshIndicator(
             color: colors.primary,
@@ -2554,110 +2584,118 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                         controller: _ledgerHorizontalController,
                         scrollDirection: Axis.horizontal,
                         child: DataTable(
-                        headingRowColor: WidgetStatePropertyAll(
-                          colors.surfaceContainerHigh,
-                        ),
-                        dataRowMinHeight: 62,
-                        dataRowMaxHeight: 76,
-                        columnSpacing: 24,
-                        columns: const [
-                          DataColumn(label: Text('DATE')),
-                          DataColumn(label: Text('CUSTOMER')),
-                          DataColumn(label: Text('ENTERED BY')),
-                          DataColumn(label: Text('PAYMENT METHOD')),
-                          DataColumn(label: Text('NOTES')),
-                          DataColumn(
-                            label: Text('AMOUNT', textAlign: TextAlign.end),
+                          headingRowColor: WidgetStatePropertyAll(
+                            colors.surfaceContainerHigh,
                           ),
-                          DataColumn(label: Text('ACTION')),
-                        ],
-                        rows: payments.map((payment) {
-                          final method = payment.paymentMethod.trim().isEmpty
-                              ? '—'
-                              : payment.paymentMethod;
-                          final notes = payment.notes.trim();
-                          return DataRow(
-                            cells: [
-                              DataCell(
-                                Text(
-                                  _formatDate(
-                                    payment.transactionDate.toLocal(),
-                                  ),
-                                ),
-                              ),
-                              DataCell(
-                                ConstrainedBox(
-                                  constraints: const BoxConstraints(
-                                    maxWidth: 220,
-                                  ),
-                                  child: Text(
-                                    payment.customerName,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
+                          dataRowMinHeight: 62,
+                          dataRowMaxHeight: 76,
+                          columnSpacing: 24,
+                          columns: const [
+                            DataColumn(label: Text('DATE')),
+                            DataColumn(label: Text('CUSTOMER')),
+                            DataColumn(label: Text('ENTERED BY')),
+                            DataColumn(label: Text('PAYMENT METHOD')),
+                            DataColumn(label: Text('NOTES')),
+                            DataColumn(
+                              label: Text('AMOUNT', textAlign: TextAlign.end),
+                            ),
+                            DataColumn(label: Text('ACTION')),
+                          ],
+                          rows: payments.map((payment) {
+                            final method = payment.paymentMethod.trim().isEmpty
+                                ? '—'
+                                : payment.paymentMethod;
+                            final notes = payment.notes.trim();
+                            return DataRow(
+                              cells: [
+                                DataCell(
+                                  Text(
+                                    _formatDate(
+                                      payment.transactionDate.toLocal(),
                                     ),
                                   ),
                                 ),
-                              ),
-                              DataCell(
-                                Text(
-                                  payment.receivedBy,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              DataCell(Text(method)),
-                              DataCell(
-                                ConstrainedBox(
-                                  constraints: const BoxConstraints(
-                                    maxWidth: 240,
-                                  ),
-                                  child: Text(
-                                    notes.isEmpty ? '—' : notes,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: colors.onSurfaceVariant,
+                                DataCell(
+                                  ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                      maxWidth: 220,
                                     ),
-                                  ),
-                                ),
-                              ),
-                              DataCell(
-                                Align(
-                                  alignment: Alignment.centerRight,
-                                  child: Text(
-                                    _money(payment.amountReceived),
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      color: colors.primary,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              DataCell(
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      tooltip: 'Edit payment',
-                                      onPressed: () => _editPayment(payment),
-                                      icon: const Icon(Icons.edit_outlined),
-                                    ),
-                                    IconButton(
-                                      tooltip: 'Delete payment',
-                                      onPressed: () => _deletePayment(payment),
-                                      icon: Icon(
-                                        Icons.delete_outline_rounded,
-                                        color: colors.error,
+                                    child: Text(
+                                      payment.customerName,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
                                       ),
                                     ),
-                                  ],
+                                  ),
                                 ),
-                              ),
-                            ],
-                          );
-                        }).toList(),
+                                DataCell(
+                                  Text(
+                                    payment.receivedBy,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                DataCell(
+                                  Text(
+                                    PaymentMethodBreakdown.display(
+                                          payment.paymentMethodNote,
+                                        ) ??
+                                        method,
+                                  ),
+                                ),
+                                DataCell(
+                                  ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                      maxWidth: 240,
+                                    ),
+                                    child: Text(
+                                      notes.isEmpty ? '—' : notes,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: colors.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                DataCell(
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: Text(
+                                      _money(_amountForCurrentMethod(payment)),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        color: colors.primary,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                DataCell(
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        tooltip: 'Edit payment',
+                                        onPressed: () => _editPayment(payment),
+                                        icon: const Icon(Icons.edit_outlined),
+                                      ),
+                                      IconButton(
+                                        tooltip: 'Delete payment',
+                                        onPressed: () =>
+                                            _deletePayment(payment),
+                                        icon: Icon(
+                                          Icons.delete_outline_rounded,
+                                          color: colors.error,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            );
+                          }).toList(),
                         ),
                       ),
                     ),
@@ -2667,6 +2705,8 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                     (payment) => _PaymentTile(
                       payment: payment,
                       date: _formatDate(payment.transactionDate.toLocal()),
+                      displayedReceived: _amountForCurrentMethod(payment),
+                      selectedMethod: _methodFilter,
                       colors: colors,
                       onEdit: () => _editPayment(payment),
                       onDelete: () => _deletePayment(payment),
@@ -2755,6 +2795,10 @@ class _PaymentTile extends StatelessWidget {
 
   final String date;
 
+  final double displayedReceived;
+
+  final String selectedMethod;
+
   final ColorScheme colors;
 
   final VoidCallback onDelete;
@@ -2764,6 +2808,10 @@ class _PaymentTile extends StatelessWidget {
     required this.payment,
 
     required this.date,
+
+    required this.displayedReceived,
+
+    required this.selectedMethod,
 
     required this.colors,
 
@@ -2864,8 +2912,11 @@ class _PaymentTile extends StatelessWidget {
                 const SizedBox(height: 6),
 
                 Text(
-                  'Settlement: ₹${payment.amount.toStringAsFixed(2)}  •  '
-                  'Received: ₹${payment.amountReceived.toStringAsFixed(2)}',
+                  selectedMethod == 'all'
+                      ? 'Settlement: ₹${payment.amount.toStringAsFixed(2)}  •  '
+                            'Received: ₹${displayedReceived.toStringAsFixed(2)}'
+                      : 'Received via ${selectedMethod.toUpperCase()}: '
+                            '₹${displayedReceived.toStringAsFixed(2)}',
 
                   style: TextStyle(
                     color: colors.onSurfaceVariant,
@@ -2875,6 +2926,19 @@ class _PaymentTile extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+
+                if (PaymentMethodBreakdown.display(payment.paymentMethodNote)
+                    case final splitDetails?) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    splitDetails,
+                    style: TextStyle(
+                      color: colors.onSurfaceVariant,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
 
                 if (payment.discount > 0) ...[
                   const SizedBox(height: 3),

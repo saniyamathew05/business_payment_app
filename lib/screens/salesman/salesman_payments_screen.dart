@@ -5,8 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../services/currency_formatter.dart';
+import '../../services/payment_method_breakdown.dart';
 import '../../services/ledger_user_name_service.dart';
 import '../../services/transaction_service.dart';
+import '../../services/customer_service.dart';
+import '../../services/salesman_visit_service.dart';
 
 class SalesmanPaymentsScreen extends StatefulWidget {
   const SalesmanPaymentsScreen({super.key});
@@ -27,22 +30,42 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
   String _dateFilter = 'today';
   String _methodFilter = 'all';
   DateTime? _selectedDate;
+  Set<String> _routeCustomerIds = <String>{};
 
   List<Map<String, dynamic>> get _paymentsForSummary => _payments
       .where(_matchesDate)
       .where(_matchesMethod)
       .toList(growable: false);
 
-  double get _selectedPaymentsTotal => _paymentsForSummary.fold<double>(
-    0,
-    (total, payment) =>
-        total +
-        ((payment['amount_received'] as num?)?.toDouble() ??
+  double get _selectedPaymentsTotal =>
+      _paymentsForSummary.fold<double>(0, (total, payment) {
+        final received =
+            (payment['amount_received'] as num?)?.toDouble() ??
             ((payment['amount'] as num?)?.toDouble() ?? 0) -
-                ((payment['discount'] as num?)?.toDouble() ?? 0)),
-  );
+                ((payment['discount'] as num?)?.toDouble() ?? 0);
+        final method = _methodFilter;
+        final note = payment['payment_method_note']?.toString();
+        final isSplit = PaymentMethodBreakdown.parse(note).isNotEmpty;
+        final methodAmount = method == 'all'
+            ? received
+            : PaymentMethodBreakdown.amountFor(
+                note: note,
+                method: method,
+                fallbackAmount: isSplit ? 0 : received,
+              );
+        return total + methodAmount;
+      });
 
   int get _selectedPaymentsCount => _paymentsForSummary.length;
+
+  int get _paidRouteCustomerCount {
+    return _paymentsForSummary
+        .map((payment) => payment['customer_id']?.toString())
+        .whereType<String>()
+        .where(_routeCustomerIds.contains)
+        .toSet()
+        .length;
+  }
 
   String get _selectedPeriodLabel => switch (_dateFilter) {
     'today' => 'Today',
@@ -78,6 +101,29 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
     try {
       final user = _supabase.auth.currentUser;
       if (user == null) throw Exception('You are not logged in.');
+
+      try {
+        await Future.wait([
+          CustomerService.loadCustomers(),
+          SalesmanVisitService.loadTodayRoute(),
+        ]).then((values) {
+          final routeLocations = (values[1] as List<String>)
+              .map((location) => location.trim().toLowerCase())
+              .where((location) => location.isNotEmpty)
+              .toSet();
+          _routeCustomerIds = CustomerService.customers
+              .where(
+                (customer) => routeLocations.contains(
+                  customer.location.trim().toLowerCase(),
+                ),
+              )
+              .map((customer) => customer.id)
+              .toSet();
+        });
+      } catch (error) {
+        debugPrint('Could not load route customer count: $error');
+        _routeCustomerIds = <String>{};
+      }
 
       // Salesmen share the payment history, including entries made by their
       // teammates. Receiver names are resolved separately through the
@@ -143,7 +189,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
     }
   }
 
-  String _formatDate(String date, [String? enteredAt]) {
+  String _formatDate(String date) {
     final parsed = DateTime.tryParse(date);
 
     if (parsed == null) {
@@ -151,7 +197,9 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
     }
 
     final local = parsed.toLocal();
-    final entered = DateTime.tryParse(enteredAt ?? '')?.toLocal() ?? local;
+    // transaction_date was written with the phone's local time when the
+    // payment was entered. Use it for both the date and time so older rows
+    // also show their original phone time instead of the server's created_at.
 
     final day = local.day.toString().padLeft(2, '0');
 
@@ -159,9 +207,9 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
 
     final year = local.year.toString();
 
-    final hour = entered.hour.toString().padLeft(2, '0');
+    final hour = local.hour.toString().padLeft(2, '0');
 
-    final minute = entered.minute.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
 
     return '$day/$month/$year • $hour:$minute';
   }
@@ -246,7 +294,11 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
         .trim()
         .toLowerCase()
         .replaceAll(' ', '_');
-    return method == _methodFilter;
+    return method == _methodFilter ||
+        PaymentMethodBreakdown.includes(
+          payment['payment_method_note']?.toString(),
+          _methodFilter,
+        );
   }
 
   List<Map<String, dynamic>> get _filteredPayments {
@@ -385,22 +437,29 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
               ),
             ),
 
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            Tooltip(
+              message:
+                  'Customers on today’s route with a payment matching the selected filters',
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
 
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
 
-                borderRadius: BorderRadius.circular(20),
-              ),
+                  borderRadius: BorderRadius.circular(20),
+                ),
 
-              child: Text(
-                '${payments.length} / ${_payments.length}',
+                child: Text(
+                  '$_paidRouteCustomerCount / ${_routeCustomerIds.length} paid',
 
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
 
-                  fontSize: 12,
+                    fontSize: 12,
+                  ),
                 ),
               ),
             ),
@@ -602,17 +661,20 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
 
           const SizedBox(height: 20),
 
-          Text(
-            CurrencyFormatter.rupees(_selectedPaymentsTotal),
-
-            style: const TextStyle(
-              color: Colors.white,
-
-              fontSize: 32,
-
-              fontWeight: FontWeight.w800,
-
-              letterSpacing: -0.7,
+          SizedBox(
+            width: double.infinity,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                CurrencyFormatter.rupees(_selectedPaymentsTotal),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 32,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.7,
+                ),
+              ),
             ),
           ),
 
@@ -666,8 +728,16 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
         : '';
 
     final receiverName = _receiverName(payment);
-    final paymentMethod = _formatPaymentMethod(payment['payment_method']);
-    final methodNote = payment['payment_method_note']?.toString().trim() ?? '';
+    final splitMethodDisplay = PaymentMethodBreakdown.display(
+      payment['payment_method_note']?.toString(),
+    );
+    final paymentMethod =
+        splitMethodDisplay ?? _formatPaymentMethod(payment['payment_method']);
+    final methodNote =
+        PaymentMethodBreakdown.additionalNote(
+          payment['payment_method_note']?.toString().trim(),
+        ) ??
+        '';
 
     final settlementAmount = (payment['amount'] as num?)?.toDouble() ?? 0;
 
@@ -676,6 +746,18 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
     final amountReceived =
         (payment['amount_received'] as num?)?.toDouble() ??
         (settlementAmount - discount);
+    final amountForSelectedMethod = _methodFilter == 'all'
+        ? amountReceived
+        : PaymentMethodBreakdown.amountFor(
+            note: payment['payment_method_note']?.toString(),
+            method: _methodFilter,
+            fallbackAmount:
+                PaymentMethodBreakdown.parse(
+                  payment['payment_method_note']?.toString(),
+                ).isEmpty
+                ? amountReceived
+                : 0,
+          );
 
     final date = payment['transaction_date'] as String? ?? '';
 
@@ -806,7 +888,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
                     const SizedBox(height: 3),
 
                     Text(
-                      _formatDate(date, payment['created_at']?.toString()),
+                      _formatDate(date),
 
                       style: TextStyle(
                         fontSize: 11,
@@ -830,49 +912,44 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
 
               const SizedBox(width: 10),
 
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-
-                children: [
-                  Text(
-                    '+${CurrencyFormatter.rupees(amountReceived)}',
-
-                    style: TextStyle(
-                      fontSize: 15,
-
-                      fontWeight: FontWeight.w800,
-
-                      color: Colors.green.shade700,
-                    ),
-                  ),
-
-                  const SizedBox(height: 7),
-
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-
-                    children: [
-                      if (hasSignature)
-                        Icon(
-                          Icons.draw_outlined,
-
-                          size: 15,
-
-                          color: Theme.of(context).colorScheme.primary,
+              SizedBox(
+                width: 100,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        '+${CurrencyFormatter.rupees(amountForSelectedMethod)}',
+                        maxLines: 1,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.green.shade700,
                         ),
-
-                      const SizedBox(width: 4),
-
-                      Icon(
-                        Icons.chevron_right_rounded,
-
-                        size: 19,
-
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
-                    ],
-                  ),
-                ],
+                    ),
+                    const SizedBox(height: 7),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (hasSignature)
+                          Icon(
+                            Icons.draw_outlined,
+                            size: 15,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          size: 19,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -1098,7 +1175,7 @@ class _SalesmanPaymentDetailsScreenState
     }
   }
 
-  String _formatDate(String date, [String? enteredAt]) {
+  String _formatDate(String date) {
     final parsed = DateTime.tryParse(date);
 
     if (parsed == null) {
@@ -1106,17 +1183,15 @@ class _SalesmanPaymentDetailsScreenState
     }
 
     final local = parsed.toLocal();
-    final entered = DateTime.tryParse(enteredAt ?? '')?.toLocal() ?? local;
-
     final day = local.day.toString().padLeft(2, '0');
 
     final month = local.month.toString().padLeft(2, '0');
 
     final year = local.year.toString();
 
-    final hour = entered.hour.toString().padLeft(2, '0');
+    final hour = local.hour.toString().padLeft(2, '0');
 
-    final minute = entered.minute.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
 
     return '$day/$month/$year • $hour:$minute';
   }
@@ -1249,7 +1324,7 @@ class _SalesmanPaymentDetailsScreenState
                 const SizedBox(height: 6),
 
                 Text(
-                  _formatDate(date, payment['created_at']?.toString()),
+                  _formatDate(date),
 
                   textAlign: TextAlign.center,
 

@@ -14,6 +14,7 @@ import '../../services/customer_service.dart';
 
 import '../../services/transaction_service.dart';
 import '../../services/currency_formatter.dart';
+import '../../services/payment_receipt_service.dart';
 
 class PaymentScreen extends StatefulWidget {
   final Customer customer;
@@ -42,6 +43,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   String _paymentMethod = 'cash';
 
+  final List<_PaymentMethodPart> _paymentParts = [
+    _PaymentMethodPart('cash'),
+    _PaymentMethodPart('gpay'),
+  ];
+
+  bool _splitPayment = false;
+
   final SignatureController _signatureController = SignatureController(
     penStrokeWidth: 3,
 
@@ -56,6 +64,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   bool _isSaving = false;
 
+  bool _sendWhatsAppReceipt = false;
+
   DateTime _selectedDate = DateTime.now();
 
   @override
@@ -67,6 +77,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
     _amountController.addListener(_updatePreview);
 
     _discountController.addListener(_updatePreview);
+
+    for (final part in _paymentParts) {
+      part.amountController.addListener(_updateSplitTotal);
+    }
   }
 
   @override
@@ -77,6 +91,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
     _notesController.dispose();
     _paymentMethodNoteController.dispose();
+
+    for (final part in _paymentParts) {
+      part.amountController.removeListener(_updateSplitTotal);
+      part.amountController.dispose();
+    }
 
     _signatureController.dispose();
 
@@ -111,6 +130,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
   }
 
+  void _updateSplitTotal() {
+    if (mounted) setState(() {});
+  }
+
   double get _settlementAmount {
     return double.tryParse(_amountController.text.trim()) ?? 0;
   }
@@ -128,6 +151,49 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
     return result;
   }
+
+  static const _paymentMethods = <String>['cash', 'cheque', 'neft', 'gpay'];
+
+  void _setSplitPayment(bool enabled) {
+    setState(() {
+      _splitPayment = enabled;
+      if (enabled && _paymentParts.length >= 2) {
+        _paymentParts[0].method = _paymentMethod;
+        if (_paymentParts[1].method == _paymentMethod) {
+          _paymentParts[1].method = _paymentMethods.firstWhere(
+            (method) => method != _paymentMethod,
+          );
+        }
+      } else if (!enabled) {
+        _paymentMethod = _paymentParts.first.method;
+      }
+    });
+  }
+
+  void _addPaymentPart() {
+    final unusedMethods = _paymentMethods
+        .where((method) => !_paymentParts.any((part) => part.method == method))
+        .toList();
+    if (unusedMethods.isEmpty) return;
+    final part = _PaymentMethodPart(unusedMethods.first)
+      ..amountController.addListener(_updateSplitTotal);
+    setState(() => _paymentParts.add(part));
+  }
+
+  void _removePaymentPart(int index) {
+    if (_paymentParts.length <= 2) return;
+    setState(() {
+      final part = _paymentParts.removeAt(index);
+      part.amountController.removeListener(_updateSplitTotal);
+      part.amountController.dispose();
+    });
+  }
+
+  double get _enteredSplitTotal => _paymentParts.fold<double>(
+    0,
+    (total, part) =>
+        total + (double.tryParse(part.amountController.text.trim()) ?? 0),
+  );
 
   double get _remainingBalance {
     final result = _currentBalance - _settlementAmount;
@@ -149,8 +215,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     setState(() {});
   }
 
-  DateTime _paymentEntryDateTime() {
-    final enteredAt = DateTime.now();
+  DateTime _paymentEntryDateTime(DateTime enteredAt) {
     return DateTime(
       _selectedDate.year,
       _selectedDate.month,
@@ -298,11 +363,54 @@ class _PaymentScreenState extends State<PaymentScreen> {
       return;
     }
 
+    var methodNote = _paymentMethodNoteController.text.trim();
+    if (_splitPayment) {
+      final usedMethods = _paymentParts.map((part) => part.method).toSet();
+      if (usedMethods.length != _paymentParts.length) {
+        _showMessage(
+          'Choose a different method for each amount.',
+          isError: true,
+        );
+        return;
+      }
+      final amounts = <({String method, double amount})>[];
+      for (final part in _paymentParts) {
+        final partAmount = double.tryParse(part.amountController.text.trim());
+        if (partAmount == null || partAmount <= 0) {
+          _showMessage(
+            'Enter a positive amount for every payment method.',
+            isError: true,
+          );
+          return;
+        }
+        amounts.add((method: part.method, amount: partAmount));
+      }
+      final splitTotal = amounts.fold<double>(
+        0,
+        (sum, part) => sum + part.amount,
+      );
+      if ((splitTotal - received).abs() >= 0.01) {
+        _showMessage(
+          'The method amounts must add up to ${CurrencyFormatter.rupees(received)}.',
+          isError: true,
+        );
+        return;
+      }
+      _paymentMethod = amounts.first.method;
+      final breakdown =
+          'Split amounts: ${amounts.map((part) => '${part.method}=${part.amount.toStringAsFixed(2)}').join(';')}';
+      methodNote = methodNote.isEmpty ? breakdown : '$breakdown • $methodNote';
+    }
+
     if (_signatureController.isEmpty) {
       _showMessage('Please collect the customer signature.', isError: true);
 
       return;
     }
+
+    // Capture this on the device when Save is pressed. Signature upload and
+    // server processing can take long enough to skew a server-generated time.
+    final enteredAt = DateTime.now();
 
     setState(() {
       _isSaving = true;
@@ -330,31 +438,46 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
         remainingBalance: _remainingBalance,
 
-        transactionDate: _paymentEntryDateTime(),
+        transactionDate: _paymentEntryDateTime(enteredAt),
 
-        createdAt: DateTime.now(),
+        createdAt: enteredAt,
 
         notes: _notesController.text.trim(),
 
         paymentMethod: _paymentMethod,
 
-        paymentMethodNote: _paymentMethodNoteController.text.trim(),
+        paymentMethodNote: methodNote,
 
         signature: await _signatureController.toPngBytes() ?? Uint8List(0),
 
         signaturePath: signaturePath,
       );
 
-      final success = await _savePaymentWithDiscount(
+      final savedPayment = await _savePaymentWithDiscount(
         temporaryTransaction,
 
         discount,
       );
 
-      if (!success) {
+      if (savedPayment == null) {
         await _deleteUploadedSignature(signaturePath);
 
         return;
+      }
+
+      var whatsappResult = '';
+      if (_sendWhatsAppReceipt) {
+        try {
+          await PaymentReceiptService.sendWhatsAppReceipt(
+            customerId: widget.customer.id,
+            payment: savedPayment,
+          );
+          whatsappResult = ' WhatsApp receipt sent.';
+        } catch (error) {
+          debugPrint('WhatsApp payment receipt failed: $error');
+          whatsappResult =
+              ' WhatsApp receipt could not be sent. Check the Cloud API setup.';
+        }
       }
 
       await CustomerService.loadCustomers();
@@ -366,7 +489,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
       }
 
       _showMessage(
-        'Payment saved. ${CurrencyFormatter.rupees(received)} received.',
+        'Payment saved. ${CurrencyFormatter.rupees(received)} received.'
+        '$whatsappResult',
       );
 
       Navigator.pop(context, true);
@@ -387,7 +511,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
   }
 
-  Future<bool> _savePaymentWithDiscount(
+  Future<PaymentTransaction?> _savePaymentWithDiscount(
     PaymentTransaction transaction,
 
     double discount,
@@ -404,7 +528,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       }
 
       final response = await Supabase.instance.client.rpc(
-        'record_payment',
+        'record_payment_with_phone_time',
 
         params: {
           'p_customer_id': transaction.customerId,
@@ -425,6 +549,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
           'p_payment_method_note': transaction.paymentMethodNote.isEmpty
               ? null
               : transaction.paymentMethodNote,
+          'p_entered_at': (transaction.createdAt ?? DateTime.now())
+              .toUtc()
+              .toIso8601String(),
         },
       );
 
@@ -438,6 +565,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
         customerName: transaction.customerName,
 
         amount: (inserted['amount'] as num).toDouble(),
+
+        discount: (inserted['discount'] as num?)?.toDouble() ?? discount,
+
+        amountReceived: (inserted['amount_received'] as num?)?.toDouble(),
 
         previousBalance: (inserted['previous_balance'] as num).toDouble(),
 
@@ -467,7 +598,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
       TransactionService.dataVersion.value++;
 
-      return true;
+      return savedTransaction;
     } catch (error) {
       final message = error.toString();
 
@@ -491,7 +622,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         );
       }
 
-      return false;
+      return null;
     }
   }
 
@@ -534,8 +665,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
         ? const Color(0xFF11152E)
         : const Color(0xFFF7F9F8);
     final cardColor = isDark ? const Color(0xFF11152E) : Colors.white;
+    final hasCustomerPhone = widget.customer.phone
+        .replaceAll(RegExp(r'\D'), '')
+        .isNotEmpty;
 
     InputDecoration fieldDecoration({
+      String? labelText,
       String? prefixText,
       String? hintText,
       Widget? prefixIcon,
@@ -543,6 +678,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       String? helperText,
     }) {
       return InputDecoration(
+        labelText: labelText,
         prefixText: prefixText,
         hintText: hintText,
         prefixIcon: prefixIcon,
@@ -774,35 +910,144 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    initialValue: _paymentMethod,
-                    decoration: fieldDecoration(
-                      prefixIcon: const Icon(
-                        Icons.account_balance_wallet_outlined,
+                  if (!_splitPayment)
+                    DropdownButtonFormField<String>(
+                      initialValue: _paymentMethod,
+                      decoration: fieldDecoration(
+                        prefixIcon: const Icon(
+                          Icons.account_balance_wallet_outlined,
+                        ),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'cash', child: Text('Cash')),
+                        DropdownMenuItem(
+                          value: 'cheque',
+                          child: Text('Cheque / Check'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'neft',
+                          child: Text('Online - NEFT'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'gpay',
+                          child: Text('Online - GPay'),
+                        ),
+                      ],
+                      onChanged: _isSaving
+                          ? null
+                          : (value) {
+                              if (value == null) return;
+                              setState(() => _paymentMethod = value);
+                            },
+                    ),
+                  SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Split across payment methods'),
+                    value: _splitPayment,
+                    onChanged: _isSaving ? null : _setSplitPayment,
+                  ),
+                  if (_splitPayment) ...[
+                    for (
+                      var index = 0;
+                      index < _paymentParts.length;
+                      index++
+                    ) ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              initialValue: _paymentParts[index].method,
+                              decoration: fieldDecoration(
+                                labelText: 'Method ${index + 1}',
+                              ),
+                              items: _paymentMethods
+                                  .where(
+                                    (method) =>
+                                        method == _paymentParts[index].method ||
+                                        !_paymentParts.any(
+                                          (part) => part.method == method,
+                                        ),
+                                  )
+                                  .map(
+                                    (method) => DropdownMenuItem(
+                                      value: method,
+                                      child: Text(_paymentMethodLabel(method)),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: _isSaving
+                                  ? null
+                                  : (value) {
+                                      if (value == null) return;
+                                      setState(
+                                        () =>
+                                            _paymentParts[index].method = value,
+                                      );
+                                    },
+                            ),
+                          ),
+                          if (_paymentParts.length > 2)
+                            IconButton(
+                              tooltip: 'Remove method',
+                              onPressed: _isSaving
+                                  ? null
+                                  : () => _removePaymentPart(index),
+                              icon: const Icon(Icons.remove_circle_outline),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _paymentParts[index].amountController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: fieldDecoration(
+                          labelText:
+                              'Amount through ${_paymentMethodLabel(_paymentParts[index].method)} (₹)',
+                          hintText: 'Enter this method’s amount',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    if (_paymentParts.length < _paymentMethods.length)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: _isSaving ? null : _addPaymentPart,
+                          icon: const Icon(Icons.add),
+                          label: const Text('Add another method'),
+                        ),
+                      ),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: colors.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Total entered: ${CurrencyFormatter.rupees(_enteredSplitTotal)}',
+                            style: TextStyle(
+                              color: colors.onSurface,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'Amount received: ${CurrencyFormatter.rupees(_amountReceived)}',
+                            style: TextStyle(
+                              color: colors.onSurfaceVariant,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    items: const [
-                      DropdownMenuItem(value: 'cash', child: Text('Cash')),
-                      DropdownMenuItem(
-                        value: 'cheque',
-                        child: Text('Cheque / Check'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'neft',
-                        child: Text('Online - NEFT'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'gpay',
-                        child: Text('Online - GPay'),
-                      ),
-                    ],
-                    onChanged: _isSaving
-                        ? null
-                        : (value) {
-                            if (value == null) return;
-                            setState(() => _paymentMethod = value);
-                          },
-                  ),
+                  ],
                   const SizedBox(height: 16),
                   const Text(
                     'Payment Method Note / Reference',
@@ -947,6 +1192,26 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     ),
                   ),
                   const SizedBox(height: 14),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: _sendWhatsAppReceipt,
+                    onChanged: _isSaving || !hasCustomerPhone
+                        ? null
+                        : (value) => setState(
+                            () => _sendWhatsAppReceipt = value ?? false,
+                          ),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    title: const Text(
+                      'Send receipt to WhatsApp automatically',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    subtitle: Text(
+                      hasCustomerPhone
+                          ? 'Requires Cloud API setup. Only select this if the customer agreed to receive WhatsApp messages.'
+                          : 'Add a customer phone number to enable this.',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
                     height: 56,
@@ -1047,3 +1312,18 @@ class _SummaryRow extends StatelessWidget {
     );
   }
 }
+
+class _PaymentMethodPart {
+  String method;
+  final TextEditingController amountController = TextEditingController();
+
+  _PaymentMethodPart(this.method);
+}
+
+String _paymentMethodLabel(String method) => switch (method) {
+  'cash' => 'Cash',
+  'cheque' => 'Cheque / Check',
+  'neft' => 'Online - NEFT',
+  'gpay' => 'Online - GPay',
+  _ => method,
+};
