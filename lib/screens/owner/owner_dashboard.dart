@@ -102,8 +102,12 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
     return 'Good evening';
   }
 
-  bool _sameDay(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
+  bool _sameDay(DateTime a, DateTime b) {
+    final local = a.toLocal();
+    return local.year == b.year &&
+        local.month == b.month &&
+        local.day == b.day;
+  }
 
   List<PaymentTransaction> get _transactions => TransactionService.transactions;
 

@@ -677,21 +677,21 @@ class _ReportsContentState extends State<_ReportsContent> {
   Widget _buildPaymentActivity(List<PaymentTransaction> transactions) {
     final now = DateTime.now();
 
-    final today = transactions.where(
-      (transaction) =>
-          transaction.transactionDate.year == now.year &&
-          transaction.transactionDate.month == now.month &&
-          transaction.transactionDate.day == now.day,
-    );
+    final today = transactions.where((transaction) {
+      final localDate = transaction.transactionDate.toLocal();
+      return localDate.year == now.year &&
+          localDate.month == now.month &&
+          localDate.day == now.day;
+    });
 
     final yesterdayDate = now.subtract(const Duration(days: 1));
 
-    final yesterday = transactions.where(
-      (transaction) =>
-          transaction.transactionDate.year == yesterdayDate.year &&
-          transaction.transactionDate.month == yesterdayDate.month &&
-          transaction.transactionDate.day == yesterdayDate.day,
-    );
+    final yesterday = transactions.where((transaction) {
+      final localDate = transaction.transactionDate.toLocal();
+      return localDate.year == yesterdayDate.year &&
+          localDate.month == yesterdayDate.month &&
+          localDate.day == yesterdayDate.day;
+    });
 
     final todayAmount = today.fold<double>(
       0,
@@ -1236,12 +1236,12 @@ class _ReportsContentState extends State<_ReportsContent> {
         ).subtract(Duration(days: 6 - index));
 
         final total = transactions
-            .where(
-              (transaction) =>
-                  transaction.transactionDate.year == date.year &&
-                  transaction.transactionDate.month == date.month &&
-                  transaction.transactionDate.day == date.day,
-            )
+            .where((transaction) {
+              final localDate = transaction.transactionDate.toLocal();
+              return localDate.year == date.year &&
+                  localDate.month == date.month &&
+                  localDate.day == date.day;
+            })
             .fold<double>(
               0,
 
@@ -1263,12 +1263,12 @@ class _ReportsContentState extends State<_ReportsContent> {
         ).subtract(Duration(days: 29 - index));
 
         final total = transactions
-            .where(
-              (transaction) =>
-                  transaction.transactionDate.year == date.year &&
-                  transaction.transactionDate.month == date.month &&
-                  transaction.transactionDate.day == date.day,
-            )
+            .where((transaction) {
+              final localDate = transaction.transactionDate.toLocal();
+              return localDate.year == date.year &&
+                  localDate.month == date.month &&
+                  localDate.day == date.day;
+            })
             .fold<double>(
               0,
 
@@ -1283,11 +1283,11 @@ class _ReportsContentState extends State<_ReportsContent> {
       final monthDate = DateTime(now.year, now.month - (11 - index), 1);
 
       final total = transactions
-          .where(
-            (transaction) =>
-                transaction.transactionDate.year == monthDate.year &&
-                transaction.transactionDate.month == monthDate.month,
-          )
+          .where((transaction) {
+            final localDate = transaction.transactionDate.toLocal();
+            return localDate.year == monthDate.year &&
+                localDate.month == monthDate.month;
+          })
           .fold<double>(
             0,
 

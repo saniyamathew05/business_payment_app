@@ -332,23 +332,26 @@ class TransactionService {
       return false;
     }
     try {
-      await _supabase
-          .from('payments')
-          .update({
-            'amount': amount,
-            'discount': discount,
-            'amount_received': amount - discount,
-            'notes': notes.trim().isEmpty ? null : notes.trim(),
-            'payment_method': paymentMethod,
-            'payment_method_note': paymentMethodNote.trim().isEmpty
-                ? null
-                : paymentMethodNote.trim(),
-            'transaction_date': transactionDate.toUtc().toIso8601String(),
-          })
-          .eq('id', paymentId);
+      final updated = await _supabase.rpc(
+        'update_payment',
+        params: {
+          'p_payment_id': paymentId,
+          'p_amount': amount,
+          'p_discount': discount,
+          'p_notes': notes.trim().isEmpty ? null : notes.trim(),
+          'p_payment_method': paymentMethod,
+          'p_payment_method_note': paymentMethodNote.trim().isEmpty
+              ? null
+              : paymentMethodNote.trim(),
+          'p_transaction_date': transactionDate.toUtc().toIso8601String(),
+        },
+      );
+      if (updated != true) {
+        errorMessage = 'The payment was not updated.';
+        return false;
+      }
       await loadTransactions();
       await loadCustomerBalances();
-      dataVersion.value++;
       return true;
     } catch (error) {
       errorMessage = error.toString();
@@ -422,10 +425,12 @@ class TransactionService {
 
     return transactions
         .where(
-          (transaction) =>
-              transaction.transactionDate.year == now.year &&
-              transaction.transactionDate.month == now.month &&
-              transaction.transactionDate.day == now.day,
+          (transaction) {
+            final localDate = transaction.transactionDate.toLocal();
+            return localDate.year == now.year &&
+                localDate.month == now.month &&
+                localDate.day == now.day;
+          },
         )
         .fold(0.0, (sum, transaction) => sum + transaction.amountReceived);
   }
@@ -439,10 +444,12 @@ class TransactionService {
 
     return transactions
         .where(
-          (transaction) =>
-              transaction.transactionDate.year == now.year &&
-              transaction.transactionDate.month == now.month &&
-              transaction.transactionDate.day == now.day,
+          (transaction) {
+            final localDate = transaction.transactionDate.toLocal();
+            return localDate.year == now.year &&
+                localDate.month == now.month &&
+                localDate.day == now.day;
+          },
         )
         .length;
   }
