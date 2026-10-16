@@ -19,6 +19,7 @@ import 'package:printing/printing.dart';
 import 'package:file_selector/file_selector.dart';
 
 import '../../services/transaction_service.dart';
+import '../../services/payment_receipt_share_service.dart';
 
 import '../payments/payment_screen.dart';
 
@@ -44,6 +45,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   bool _isRefreshingFromDataChange = false;
 
   bool _isOwner = false;
+  bool _sharingReceipt = false;
 
   final String _selectedHistorySection = 'purchases';
   String _activeTab = 'ledger';
@@ -448,45 +450,20 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   }
 
   Future<void> _whatsappCustomer() async {
-    final rawPhone = _displayCustomer.phone.trim();
-
-    if (rawPhone.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('This customer does not have a phone number.'),
-        ),
-      );
-
-      return;
-    }
-
-    var phone = rawPhone.replaceAll(RegExp(r'[^0-9+]'), '');
-
-    if (phone.startsWith('+')) {
-      phone = phone.substring(1);
-    } else if (phone.length == 10) {
-      phone = '91$phone';
-    }
-
-    final uri = Uri.parse('https://wa.me/$phone');
-
+    if (_sharingReceipt) return;
+    setState(() => _sharingReceipt = true);
     try {
-      final launched = await launchUrl(
-        uri,
-        mode: LaunchMode.externalApplication,
+      await PaymentReceiptShareService.shareLatest(
+        context: context,
+        customer: _displayCustomer,
       );
-
-      if (!launched && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open WhatsApp.')),
-        );
-      }
     } catch (error) {
       if (!mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open WhatsApp: $error')),
+        SnackBar(content: Text('Could not share receipt: $error')),
       );
+    } finally {
+      if (mounted) setState(() => _sharingReceipt = false);
     }
   }
 
@@ -2116,8 +2093,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                               height: 28,
                                             ),
                                         padding: EdgeInsets.zero,
-                                        tooltip: 'WhatsApp customer',
-                                        onPressed: _whatsappCustomer,
+                                        tooltip:
+                                            'Review and share payment receipt',
+                                        onPressed: _sharingReceipt
+                                            ? null
+                                            : _whatsappCustomer,
                                         icon: const Icon(
                                           Icons.chat_outlined,
                                           size: 16,
@@ -2496,7 +2476,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 label: const Text('Call'),
               ),
               OutlinedButton.icon(
-                onPressed: _whatsappCustomer,
+                onPressed: _sharingReceipt ? null : _whatsappCustomer,
                 icon: const Icon(Icons.chat_outlined, size: 16),
                 label: const Text('WhatsApp'),
               ),

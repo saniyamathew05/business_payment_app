@@ -2,10 +2,10 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/customer.dart';
+import '../../services/customer_service.dart';
 
 import '../../models/transaction.dart';
 
@@ -15,7 +15,7 @@ import '../../services/transaction_service.dart';
 import '../../services/currency_formatter.dart';
 import '../../services/salesman_visit_service.dart';
 import '../../services/ledger_user_name_service.dart';
-import '../../services/payment_receipt_service.dart';
+import '../../services/payment_receipt_share_service.dart';
 
 class SalesmanCustomerDetailsScreen extends StatefulWidget {
   final Customer customer;
@@ -32,6 +32,8 @@ class _SalesmanCustomerDetailsScreenState
   List<Map<String, dynamic>> _ledgerEntries = const [];
   String _historyFilter = 'All';
   bool _preparingReceiptShare = false;
+  late Customer _customer;
+  bool _savingPhone = false;
 
   List<Map<String, dynamic>> get _saleEntries => _ledgerEntries
       .where((entry) => entry['entry_type']?.toString() == 'purchase')
@@ -46,6 +48,7 @@ class _SalesmanCustomerDetailsScreenState
   @override
   void initState() {
     super.initState();
+    _customer = widget.customer;
     _loadCustomerHistory();
   }
 
@@ -57,9 +60,7 @@ class _SalesmanCustomerDetailsScreenState
   }
 
   Future<void> _loadSaleHistory() async {
-    final entries = await TransactionService.getCustomerLedger(
-      widget.customer.id,
-    );
+    final entries = await TransactionService.getCustomerLedger(_customer.id);
     try {
       final names = await LedgerUserNameService.loadNames(
         entries.map((entry) => entry['user_id']?.toString()),
@@ -75,8 +76,75 @@ class _SalesmanCustomerDetailsScreenState
     setState(() => _ledgerEntries = entries);
   }
 
+  Future<void> _editPhone() async {
+    var phone = _customer.phone;
+    final formKey = GlobalKey<FormState>();
+    final value = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Edit customer phone number'),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            initialValue: phone,
+            autofocus: true,
+            keyboardType: TextInputType.phone,
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(labelText: 'Phone number'),
+            onChanged: (value) => phone = value,
+            validator: (value) {
+              final text = (value ?? '').trim();
+              final digits = text.replaceAll(RegExp(r'\D'), '');
+              return !RegExp(r'^[+0-9 ()-]+$').hasMatch(text) ||
+                      digits.length < 7 ||
+                      digits.length > 15 ||
+                      text.length > 40
+                  ? 'Enter a valid phone number (7–15 digits)'
+                  : null;
+            },
+            onFieldSubmitted: (_) {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(dialogContext, phone.trim());
+              }
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(dialogContext, phone.trim());
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (value == null || !mounted || value == _customer.phone) return;
+    setState(() => _savingPhone = true);
+    final updated = await CustomerService.updateCustomerPhone(
+      customerId: _customer.id,
+      phone: value,
+    );
+    if (!mounted) return;
+    setState(() {
+      _savingPhone = false;
+      if (updated != null) _customer = updated;
+    });
+    _showPhoneMessage(
+      updated != null
+          ? 'Phone number updated.'
+          : CustomerService.errorMessage ?? 'Could not update phone number.',
+    );
+  }
+
   Future<void> _callCustomer() async {
-    final phone = widget.customer.phone.trim();
+    final phone = _customer.phone.trim();
     if (phone.isEmpty) {
       _showPhoneMessage('This customer has no phone number.');
       return;
@@ -93,134 +161,17 @@ class _SalesmanCustomerDetailsScreenState
   }
 
   Future<void> _messageOnWhatsApp() async {
-    if (widget.customer.phone.trim().isEmpty) {
-      _showPhoneMessage('This customer has no phone number.');
-      return;
-    }
-
-    final payments = _ledgerEntries
-        .where((entry) => entry['entry_type']?.toString() == 'payment')
-        .toList();
-    if (payments.isEmpty) {
-      _showPhoneMessage('There is no payment receipt to share yet.');
-      return;
-    }
-
-    payments.sort((a, b) {
-      final aDate = DateTime.tryParse(a['transaction_date']?.toString() ?? '');
-      final bDate = DateTime.tryParse(b['transaction_date']?.toString() ?? '');
-      return (bDate ?? DateTime(0)).compareTo(aDate ?? DateTime(0));
-    });
-    final entry = payments.first;
-    final signaturePath = entry['signature_path']?.toString();
-    if (signaturePath == null || signaturePath.isEmpty) {
-      _showPhoneMessage('The latest payment has no saved signature.');
-      return;
-    }
-
+    if (_preparingReceiptShare) return;
     setState(() => _preparingReceiptShare = true);
     try {
-      final signature = await TransactionService.downloadSignature(
-        signaturePath,
-      );
-      if (signature == null) {
-        throw Exception('Could not load the payment signature.');
-      }
-
-      final transactionDate =
-          DateTime.tryParse(entry['transaction_date']?.toString() ?? '') ??
-          DateTime.now();
-      final amount = (entry['amount'] as num?)?.toDouble() ?? 0;
-      final discount = (entry['discount'] as num?)?.toDouble() ?? 0;
-      final profile = entry['profiles'];
-      final receivedBy = profile is Map
-          ? profile['name']?.toString() ?? 'Salesman'
-          : 'Salesman';
-      final payment = PaymentTransaction(
-        id: entry['id']?.toString() ?? '',
-        customerId: widget.customer.id,
-        customerName: widget.customer.businessName,
-        amount: amount,
-        discount: discount,
-        amountReceived:
-            (entry['amount_received'] as num?)?.toDouble() ??
-            (amount - discount),
-        previousBalance:
-            (entry['balance_before'] as num?)?.toDouble() ??
-            (entry['previous_balance'] as num?)?.toDouble() ??
-            0,
-        remainingBalance:
-            (entry['balance_after'] as num?)?.toDouble() ??
-            (entry['remaining_balance'] as num?)?.toDouble() ??
-            0,
-        transactionDate: transactionDate,
-        createdAt: DateTime.tryParse(entry['created_at']?.toString() ?? ''),
-        notes: entry['notes']?.toString() ?? '',
-        signature: signature,
-        signaturePath: signaturePath,
-        receivedBy: receivedBy,
-        paymentMethod: entry['payment_method']?.toString() ?? 'cash',
-        paymentMethodNote: entry['payment_method_note']?.toString() ?? '',
-        transactionType: 'payment_received',
-      );
-      final image = await PaymentReceiptService.buildReceiptImage(
-        payment,
-        signatureBytes: signature,
-      );
-      if (!mounted) return;
-      setState(() => _preparingReceiptShare = false);
-      final shouldShare = await showDialog<bool>(
+      await PaymentReceiptShareService.shareLatest(
         context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('Review payment receipt'),
-          content: SizedBox(
-            width: 420,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Image.memory(image, fit: BoxFit.contain),
-                  const SizedBox(height: 8),
-                  Text('Share with ${widget.customer.phone} on WhatsApp.'),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton.icon(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              icon: const Icon(Icons.share_outlined),
-              label: const Text('Continue to share'),
-            ),
-          ],
-        ),
-      );
-      if (shouldShare != true || !mounted) return;
-      await SharePlus.instance.share(
-        ShareParams(
-          files: [
-            XFile.fromData(
-              image,
-              name: 'payment-receipt-${widget.customer.id}.png',
-              mimeType: 'image/png',
-            ),
-          ],
-          text: 'Payment receipt for ${widget.customer.businessName}',
-          subject: 'Payment receipt',
-        ),
+        customer: _customer,
       );
     } catch (error) {
-      if (mounted) {
-        _showPhoneMessage('Could not prepare receipt: $error');
-      }
+      if (mounted) _showPhoneMessage('Could not share receipt: $error');
     } finally {
-      if (mounted && _preparingReceiptShare) {
-        setState(() => _preparingReceiptShare = false);
-      }
+      if (mounted) setState(() => _preparingReceiptShare = false);
     }
   }
 
@@ -357,7 +308,7 @@ class _SalesmanCustomerDetailsScreenState
                         await Supabase.instance.client.rpc(
                           'record_return',
                           params: {
-                            'p_customer_id': widget.customer.id,
+                            'p_customer_id': _customer.id,
                             'p_amount': amount,
                             'p_notes': notesController.text.trim().isEmpty
                                 ? null
@@ -417,13 +368,13 @@ class _SalesmanCustomerDetailsScreenState
 
         builder: (context, _, _) {
           final balance = TransactionService.getCurrentBalance(
-            customerId: widget.customer.id,
+            customerId: _customer.id,
 
-            openingBalance: widget.customer.openingBalance,
+            openingBalance: _customer.openingBalance,
           );
 
           final payments = TransactionService.getCustomerTransactions(
-            widget.customer.id,
+            _customer.id,
           );
 
           final totalPaid = payments.fold(
@@ -458,7 +409,7 @@ class _SalesmanCustomerDetailsScreenState
                       radius: 30,
 
                       child: Text(
-                        _getInitials(widget.customer.businessName),
+                        _getInitials(_customer.businessName),
 
                         style: const TextStyle(
                           fontSize: 20,
@@ -476,7 +427,7 @@ class _SalesmanCustomerDetailsScreenState
 
                         children: [
                           Text(
-                            widget.customer.businessName,
+                            _customer.businessName,
 
                             style: const TextStyle(
                               fontSize: 24,
@@ -493,7 +444,7 @@ class _SalesmanCustomerDetailsScreenState
 
                               const SizedBox(width: 5),
 
-                              Expanded(child: Text(widget.customer.location)),
+                              Expanded(child: Text(_customer.location)),
                             ],
                           ),
 
@@ -507,17 +458,23 @@ class _SalesmanCustomerDetailsScreenState
 
                               Expanded(
                                 child: Text(
-                                  widget.customer.phone.isEmpty
+                                  _customer.phone.isEmpty
                                       ? 'No phone number'
-                                      : widget.customer.phone,
+                                      : _customer.phone,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                               IconButton(
+                                tooltip: 'Edit phone number',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: _savingPhone ? null : _editPhone,
+                                icon: const Icon(Icons.edit_outlined, size: 19),
+                              ),
+                              IconButton(
                                 tooltip: 'Call customer',
                                 visualDensity: VisualDensity.compact,
-                                onPressed: widget.customer.phone.trim().isEmpty
+                                onPressed: _customer.phone.trim().isEmpty
                                     ? null
                                     : _callCustomer,
                                 icon: const Icon(Icons.call_outlined, size: 19),
@@ -526,7 +483,7 @@ class _SalesmanCustomerDetailsScreenState
                                 tooltip: 'Review and share receipt on WhatsApp',
                                 visualDensity: VisualDensity.compact,
                                 onPressed:
-                                    widget.customer.phone.trim().isEmpty ||
+                                    _customer.phone.trim().isEmpty ||
                                         _preparingReceiptShare
                                     ? null
                                     : _messageOnWhatsApp,
@@ -650,7 +607,7 @@ class _SalesmanCustomerDetailsScreenState
                               context,
                               MaterialPageRoute(
                                 builder: (_) =>
-                                    PaymentScreen(customer: widget.customer),
+                                    PaymentScreen(customer: _customer),
                               ),
                             );
                             if (paymentSaved == true) {
@@ -658,7 +615,7 @@ class _SalesmanCustomerDetailsScreenState
                                   await SalesmanVisitService.captureLocationIfAlreadyAllowed();
                               try {
                                 await SalesmanVisitService.recordStatus(
-                                  customerId: widget.customer.id,
+                                  customerId: _customer.id,
                                   status: 'paid',
                                   capturedPosition: visitPosition,
                                 );
@@ -713,7 +670,7 @@ class _SalesmanCustomerDetailsScreenState
                       builder: (dialogContext) => AlertDialog(
                         title: const Text('Record no payment'),
                         content: Text(
-                          'Confirm that ${widget.customer.businessName} did not pay today. Other salesmen will see this customer as handled for today.',
+                          'Confirm that ${_customer.businessName} did not pay today. Other salesmen will see this customer as handled for today.',
                         ),
                         actions: [
                           TextButton(
@@ -731,7 +688,7 @@ class _SalesmanCustomerDetailsScreenState
                     if (confirm != true) return;
                     try {
                       await SalesmanVisitService.recordStatus(
-                        customerId: widget.customer.id,
+                        customerId: _customer.id,
                         status: 'rejected',
                       );
                       if (mounted) {
@@ -861,7 +818,7 @@ class _SalesmanCustomerDetailsScreenState
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute(
                               builder: (_) => _SalesmanSaleDetailsScreen(
-                                customer: widget.customer,
+                                customer: _customer,
                                 entry: entry,
                                 recordedBy: recordedBy,
                               ),

@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../models/customer.dart';
+import '../../services/currency_formatter.dart';
 import '../../services/customer_service.dart';
+import '../../services/salesman_visit_service.dart';
+import '../../services/transaction_service.dart';
+import '../customers/customer_details_screen.dart';
 
 /// Owner tools for reusable named routes and per-day location assignments.
 /// Requires the SQL migration in owner_route_management_schema.sql.
@@ -30,6 +34,10 @@ class _OwnerRouteManagementScreenState
   List<Map<String, dynamic>> _routes = [];
   List<Map<String, dynamic>> _salesmen = [];
   final Map<String, List<String>> _todayAssignments = {};
+  Map<String, String> _todayCustomerStatuses = {};
+  final Map<String, String> _customerFiltersBySalesman = {};
+  final Map<String, String> _customerSearchBySalesman = {};
+  String _salesmanFilterId = '';
   String? _selectedRouteId;
   final Set<String> _selectedSalesmanIds = {};
   Set<String> _selectedLocations = {};
@@ -68,10 +76,11 @@ class _OwnerRouteManagementScreenState
     });
     try {
       await CustomerService.loadCustomers();
+      await TransactionService.loadCustomerBalances();
       final now = DateTime.now();
       final todayKey =
           '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-      final results = await Future.wait([
+      final results = await Future.wait<dynamic>([
         _client
             .from('salesman_route_templates')
             .select('id, route_name, locations, updated_at')
@@ -82,10 +91,14 @@ class _OwnerRouteManagementScreenState
             .select('salesman_id, locations, route_date')
             .lte('route_date', todayKey)
             .order('route_date', ascending: false),
+        SalesmanVisitService.loadTodayStatuses(),
       ]);
       final allProfiles = List<Map<String, dynamic>>.from(results[1] as List);
       final assignmentRows = List<Map<String, dynamic>>.from(
         results[2] as List,
+      );
+      final todayStatuses = Map<String, String>.from(
+        results[3] as Map<String, String>,
       );
       final assignments = <String, List<String>>{};
       for (final row in assignmentRows) {
@@ -109,12 +122,16 @@ class _OwnerRouteManagementScreenState
         _todayAssignments
           ..clear()
           ..addAll(assignments);
+        _todayCustomerStatuses = todayStatuses;
         _selectedRouteId ??= _routes.isEmpty
             ? null
             : _routes.first['id'].toString();
         final availableSalesmanIds = _salesmen
             .map((salesman) => salesman['id'].toString())
             .toSet();
+        if (!availableSalesmanIds.contains(_salesmanFilterId)) {
+          _salesmanFilterId = '';
+        }
         _selectedSalesmanIds.removeWhere(
           (id) => !availableSalesmanIds.contains(id),
         );
@@ -740,105 +757,299 @@ class _OwnerRouteManagementScreenState
         const SizedBox(height: 12),
         if (_salesmen.isEmpty)
           const Text('No salesman accounts were found.')
-        else
-          ..._salesmen.map((salesman) {
-            final salesmanId = (salesman['id'] ?? '').toString();
-            final assignedLocations =
-                _todayAssignments[salesmanId] ?? const <String>[];
-            final normalizedAssigned = [...assignedLocations]
-              ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-            String? assignedRouteName;
-            for (final route in _routes) {
-              final templateLocations =
-                  (route['locations'] as List? ?? const [])
-                      .map((e) => e.toString())
-                      .toList()
-                    ..sort(
-                      (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
+        else ...[
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 360),
+              child: InputDecorator(
+                decoration: const InputDecoration(labelText: 'Salesman'),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: _salesmanFilterId,
+                    isExpanded: true,
+                    isDense: true,
+                    items: [
+                      const DropdownMenuItem(
+                        value: '',
+                        child: Text('All salesmen'),
+                      ),
+                      ..._salesmen.map(
+                        (salesman) => DropdownMenuItem(
+                          value: salesman['id'].toString(),
+                          child: Text(
+                            (salesman['name'] ?? 'Salesman').toString(),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) => setState(() {
+                      _salesmanFilterId = value ?? '';
+                    }),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          ..._salesmen
+              .where((salesman) {
+                return _salesmanFilterId.isEmpty ||
+                    salesman['id'].toString() == _salesmanFilterId;
+              })
+              .map((salesman) {
+                final salesmanId = (salesman['id'] ?? '').toString();
+                final assignedLocations =
+                    _todayAssignments[salesmanId] ?? const <String>[];
+                final normalizedAssigned = [...assignedLocations]
+                  ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+                String? assignedRouteName;
+                for (final route in _routes) {
+                  final templateLocations =
+                      (route['locations'] as List? ?? const [])
+                          .map((e) => e.toString())
+                          .toList()
+                        ..sort(
+                          (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
+                        );
+                  if (templateLocations.length == normalizedAssigned.length &&
+                      List.generate(
+                        templateLocations.length,
+                        (i) => templateLocations[i] == normalizedAssigned[i],
+                      ).every((same) => same)) {
+                    assignedRouteName = route['route_name'].toString();
+                    break;
+                  }
+                }
+                final subtitle = assignedLocations.isEmpty
+                    ? 'No active route assignment'
+                    : '${assignedRouteName == null ? 'Assigned locations' : 'Route: $assignedRouteName'}\n${assignedLocations.join(' → ')}';
+                final normalizedLocations = assignedLocations
+                    .map((location) => location.trim().toLowerCase())
+                    .where((location) => location.isNotEmpty)
+                    .toSet();
+                final routeCustomers =
+                    CustomerService.customers.where((customer) {
+                      return normalizedLocations.contains(
+                        customer.location.trim().toLowerCase(),
+                      );
+                    }).toList()..sort(
+                      (a, b) => a.businessName.toLowerCase().compareTo(
+                        b.businessName.toLowerCase(),
+                      ),
                     );
-              if (templateLocations.length == normalizedAssigned.length &&
-                  List.generate(
-                    templateLocations.length,
-                    (i) => templateLocations[i] == normalizedAssigned[i],
-                  ).every((same) => same)) {
-                assignedRouteName = route['route_name'].toString();
-                break;
-              }
-            }
-            final subtitle = assignedLocations.isEmpty
-                ? 'No active route assignment'
-                : '${assignedRouteName == null ? 'Assigned locations' : 'Route: $assignedRouteName'}\n${assignedLocations.join(' → ')}';
-            final normalizedLocations = assignedLocations
-                .map((location) => location.trim().toLowerCase())
-                .where((location) => location.isNotEmpty)
-                .toSet();
-            final routeCustomers =
-                CustomerService.customers.where((customer) {
-                  return normalizedLocations.contains(
-                    customer.location.trim().toLowerCase(),
+                final customerFilter =
+                    _customerFiltersBySalesman[salesmanId] ?? 'All';
+                bool matchesFilter(Customer customer, String filter) {
+                  final visited = _todayCustomerStatuses.containsKey(
+                    customer.id,
                   );
-                }).toList()..sort(
-                  (a, b) => a.businessName.toLowerCase().compareTo(
-                    b.businessName.toLowerCase(),
+                  return switch (filter) {
+                    'Pending' => !visited,
+                    'Visited' => visited,
+                    _ => true,
+                  };
+                }
+
+                final query = _customerSearchBySalesman[salesmanId] ?? '';
+                final searchedCustomers = routeCustomers.where((customer) {
+                  return query.isEmpty ||
+                      customer.businessName.toLowerCase().contains(query) ||
+                      customer.location.toLowerCase().contains(query);
+                }).toList();
+                final visibleCustomers = searchedCustomers
+                    .where(
+                      (customer) => matchesFilter(customer, customerFilter),
+                    )
+                    .toList();
+                return Card(
+                  key: ValueKey(salesmanId),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ListTile(
+                        leading: const CircleAvatar(
+                          child: Icon(Icons.person_outline),
+                        ),
+                        title: Text(
+                          (salesman['name'] ?? 'Salesman').toString(),
+                        ),
+                        subtitle: Text(subtitle),
+                        trailing: assignedLocations.isEmpty
+                            ? null
+                            : IconButton(
+                                tooltip: 'Remove active route assignment',
+                                onPressed: _saving
+                                    ? null
+                                    : () => _removeTodayAssignment(
+                                        salesmanId: salesmanId,
+                                        salesmanName:
+                                            (salesman['name'] ?? 'Salesman')
+                                                .toString(),
+                                      ),
+                                icon: const Icon(Icons.delete_outline_rounded),
+                              ),
+                      ),
+                      if (assignedLocations.isEmpty)
+                        const ListTile(
+                          dense: true,
+                          leading: Icon(Icons.info_outline_rounded),
+                          title: Text(
+                            'No assigned route to show customers from.',
+                          ),
+                        )
+                      else if (routeCustomers.isEmpty)
+                        const ListTile(
+                          dense: true,
+                          leading: Icon(Icons.people_outline_rounded),
+                          title: Text(
+                            'No customers found on this assigned route.',
+                          ),
+                        )
+                      else ...[
+                        ListTile(
+                          dense: true,
+                          leading: const Icon(Icons.people_outline_rounded),
+                          title: Text(
+                            "Today's customers (${routeCustomers.length})",
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                          child: TextFormField(
+                            key: ValueKey('customer-search-$salesmanId'),
+                            initialValue: query,
+                            textInputAction: TextInputAction.search,
+                            decoration: const InputDecoration(
+                              hintText: 'Search customer name or location',
+                              prefixIcon: Icon(Icons.search_rounded),
+                            ),
+                            onChanged: (value) => setState(() {
+                              _customerSearchBySalesman[salesmanId] = value
+                                  .trim()
+                                  .toLowerCase();
+                            }),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: ['All', 'Pending', 'Visited'].map((
+                              filter,
+                            ) {
+                              final count = searchedCustomers
+                                  .where(
+                                    (customer) =>
+                                        matchesFilter(customer, filter),
+                                  )
+                                  .length;
+                              return ChoiceChip(
+                                label: Text('$filter ($count)'),
+                                selected: customerFilter == filter,
+                                onSelected: (_) => setState(() {
+                                  _customerFiltersBySalesman[salesmanId] =
+                                      filter;
+                                }),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                        if (visibleCustomers.isEmpty)
+                          const ListTile(
+                            title: Text(
+                              'No customers match this search and filter.',
+                            ),
+                          ),
+                        ...visibleCustomers.map((customer) {
+                          final status = _todayCustomerStatuses[customer.id];
+                          final statusLabel = switch (status) {
+                            'paid' => 'Visited',
+                            'rejected' => 'Refused today',
+                            _ => 'Pending',
+                          };
+                          final statusColor = switch (statusLabel) {
+                            'Visited' => const Color(0xFF27845B),
+                            'Refused today' => const Color(0xFFD64A55),
+                            _ => const Color(0xFFD58B28),
+                          };
+                          final initials = customer.businessName
+                              .trim()
+                              .split(RegExp(r'\s+'))
+                              .where((part) => part.isNotEmpty)
+                              .take(2)
+                              .map((part) => part[0].toUpperCase())
+                              .join();
+                          return ListTile(
+                            contentPadding: const EdgeInsetsDirectional.only(
+                              start: 56,
+                              end: 16,
+                            ),
+                            leading: CircleAvatar(
+                              child: Text(initials.isEmpty ? '?' : initials),
+                            ),
+                            title: Text(
+                              customer.businessName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  customer.location +
+                                      (customer.phone.trim().isEmpty
+                                          ? ''
+                                          : ' • ${customer.phone}'),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  'Due ${CurrencyFormatter.rupees(TransactionService.getCustomerBalance(customer.id))}',
+                                  style: TextStyle(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            trailing: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: statusColor.withValues(alpha: 0.09),
+                                borderRadius: BorderRadius.circular(7),
+                              ),
+                              child: Text(
+                                statusLabel,
+                                style: TextStyle(
+                                  color: statusColor,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    CustomerDetailsScreen(customer: customer),
+                              ),
+                            ),
+                          );
+                        }),
+                      ],
+                    ],
                   ),
                 );
-            return Card(
-              child: ExpansionTile(
-                leading: const CircleAvatar(child: Icon(Icons.person_outline)),
-                title: Text((salesman['name'] ?? 'Salesman').toString()),
-                subtitle: Text(subtitle),
-                controlAffinity: ListTileControlAffinity.leading,
-                trailing: assignedLocations.isEmpty
-                    ? null
-                    : IconButton(
-                        tooltip: 'Remove active route assignment',
-                        onPressed: _saving
-                            ? null
-                            : () => _removeTodayAssignment(
-                                salesmanId: salesmanId,
-                                salesmanName: (salesman['name'] ?? 'Salesman')
-                                    .toString(),
-                              ),
-                        icon: const Icon(Icons.delete_outline_rounded),
-                      ),
-                children: [
-                  if (assignedLocations.isEmpty)
-                    const ListTile(
-                      dense: true,
-                      leading: Icon(Icons.info_outline_rounded),
-                      title: Text('No assigned route to show customers from.'),
-                    )
-                  else if (routeCustomers.isEmpty)
-                    const ListTile(
-                      dense: true,
-                      leading: Icon(Icons.people_outline_rounded),
-                      title: Text('No customers found on this assigned route.'),
-                    )
-                  else ...[
-                    ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.people_outline_rounded),
-                      title: Text(
-                        '${routeCustomers.length} customers on route',
-                      ),
-                    ),
-                    ...routeCustomers.map(
-                      (customer) => ListTile(
-                        dense: true,
-                        contentPadding: const EdgeInsetsDirectional.only(
-                          start: 56,
-                          end: 16,
-                        ),
-                        leading: const Icon(Icons.storefront_outlined),
-                        title: Text(customer.businessName),
-                        subtitle: Text(customer.location),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            );
-          }),
+              }),
+        ],
       ],
     );
   }

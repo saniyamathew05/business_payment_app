@@ -151,6 +151,37 @@ class CustomerService {
   // UPDATE CUSTOMER
   // ---------------------------------------------------------------------------
 
+  static Future<Customer?> updateCustomerPhone({
+    required String customerId,
+    required String phone,
+  }) async {
+    errorMessage = null;
+    try {
+      final row = await _supabase
+          .rpc(
+            'update_customer_phone',
+            params: {'p_customer_id': customerId, 'p_phone': phone.trim()},
+          )
+          .select('id, business_name, location, phone, opening_balance')
+          .single();
+      final customer = Customer(
+        id: row['id'] as String,
+        businessName: row['business_name'] as String,
+        location: row['location'] as String,
+        phone: row['phone'] as String,
+        openingBalance: (row['opening_balance'] as num).toDouble(),
+      );
+      final index = customers.indexWhere((item) => item.id == customerId);
+      if (index != -1) customers[index] = customer;
+      dataVersion.value++;
+      return customer;
+    } catch (error) {
+      debugPrint('Customer phone update failed: $error');
+      errorMessage = 'Could not save the phone number. Please try again.';
+      return null;
+    }
+  }
+
   static Future<bool> updateCustomer({
     required String customerId,
     required String businessName,
