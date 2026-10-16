@@ -768,12 +768,26 @@ class _OwnerRouteManagementScreenState
             final subtitle = assignedLocations.isEmpty
                 ? 'No active route assignment'
                 : '${assignedRouteName == null ? 'Assigned locations' : 'Route: $assignedRouteName'}\n${assignedLocations.join(' → ')}';
+            final normalizedLocations = assignedLocations
+                .map((location) => location.trim().toLowerCase())
+                .where((location) => location.isNotEmpty)
+                .toSet();
+            final routeCustomers =
+                CustomerService.customers.where((customer) {
+                  return normalizedLocations.contains(
+                    customer.location.trim().toLowerCase(),
+                  );
+                }).toList()..sort(
+                  (a, b) => a.businessName.toLowerCase().compareTo(
+                    b.businessName.toLowerCase(),
+                  ),
+                );
             return Card(
-              child: ListTile(
+              child: ExpansionTile(
                 leading: const CircleAvatar(child: Icon(Icons.person_outline)),
                 title: Text((salesman['name'] ?? 'Salesman').toString()),
                 subtitle: Text(subtitle),
-                isThreeLine: assignedLocations.isNotEmpty,
+                controlAffinity: ListTileControlAffinity.leading,
                 trailing: assignedLocations.isEmpty
                     ? null
                     : IconButton(
@@ -787,6 +801,41 @@ class _OwnerRouteManagementScreenState
                               ),
                         icon: const Icon(Icons.delete_outline_rounded),
                       ),
+                children: [
+                  if (assignedLocations.isEmpty)
+                    const ListTile(
+                      dense: true,
+                      leading: Icon(Icons.info_outline_rounded),
+                      title: Text('No assigned route to show customers from.'),
+                    )
+                  else if (routeCustomers.isEmpty)
+                    const ListTile(
+                      dense: true,
+                      leading: Icon(Icons.people_outline_rounded),
+                      title: Text('No customers found on this assigned route.'),
+                    )
+                  else ...[
+                    ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.people_outline_rounded),
+                      title: Text(
+                        '${routeCustomers.length} customers on route',
+                      ),
+                    ),
+                    ...routeCustomers.map(
+                      (customer) => ListTile(
+                        dense: true,
+                        contentPadding: const EdgeInsetsDirectional.only(
+                          start: 56,
+                          end: 16,
+                        ),
+                        leading: const Icon(Icons.storefront_outlined),
+                        title: Text(customer.businessName),
+                        subtitle: Text(customer.location),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             );
           }),
