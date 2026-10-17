@@ -65,6 +65,10 @@ class CurrencyFormatter {
   static String rupees(num value, {int decimals = 2}) =>
       format(value, currencyCode: 'INR', decimals: decimals);
 
+  static String customerBalance(num balance) => balance < 0
+      ? 'Owed to customer: ${rupees(balance.abs())}'
+      : 'Amount due: ${rupees(balance)}';
+
   static String _groupIndian(String digits) {
     if (digits.length <= 3) return digits;
     final lastThree = digits.substring(digits.length - 3);

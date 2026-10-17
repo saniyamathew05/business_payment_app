@@ -1035,7 +1035,11 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                                           ),
                                           const SizedBox(width: 8),
                                           Text(
-                                            'Due ${CurrencyFormatter.rupees(TransactionService.getCustomerBalance(customer.id))}',
+                                            CurrencyFormatter.customerBalance(
+                                              TransactionService.getCustomerBalance(
+                                                customer.id,
+                                              ),
+                                            ),
                                             maxLines: 1,
                                             style: TextStyle(
                                               color: colors.primary,

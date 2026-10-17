@@ -66,7 +66,8 @@ class _ReportsContentState extends State<_ReportsContent> {
         : totalCollected / totalPayments;
 
     final outstanding = customers.fold<double>(0.0, (sum, customer) {
-      return sum + TransactionService.getCustomerBalance(customer.id);
+      final balance = TransactionService.getCustomerBalance(customer.id);
+      return sum + (balance > 0 ? balance : 0);
     });
 
     final todayCollected = TransactionService.getCollectedToday();

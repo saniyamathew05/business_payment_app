@@ -1193,7 +1193,7 @@ class _DashboardSummary extends StatelessWidget {
     final outstanding = TransactionService.customerBalances.values.fold<double>(
       0.0,
 
-      (total, balance) => total + balance,
+      (total, balance) => total + (balance > 0 ? balance : 0),
     );
 
     final collected = TransactionService.getCollectedToday();

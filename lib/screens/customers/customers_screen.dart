@@ -440,8 +440,8 @@ class _CustomerRow extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                balance == 0
-                    ? CurrencyFormatter.rupees(0, decimals: 0)
+                balance < 0
+                    ? 'To give ${_money(balance.abs())}'
                     : _money(balance),
                 style: TextStyle(
                   color: due ? scheme.error : scheme.tertiary,
@@ -451,11 +451,7 @@ class _CustomerRow extends StatelessWidget {
               ),
               PopupMenuButton<String>(
                 tooltip: 'Customer options',
-                icon: Icon(
-                  Icons.more_vert_rounded,
-                  size: 19,
-                  color: muted,
-                ),
+                icon: Icon(Icons.more_vert_rounded, size: 19, color: muted),
                 onSelected: (value) {
                   if (value == 'delete') onDelete();
                 },

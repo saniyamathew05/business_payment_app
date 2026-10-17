@@ -10,6 +10,8 @@ import '../../services/ledger_user_name_service.dart';
 import '../../services/transaction_service.dart';
 import '../../services/customer_service.dart';
 import '../../services/salesman_visit_service.dart';
+import '../../services/payment_receipt_share_service.dart';
+import '../../models/customer.dart';
 
 class SalesmanPaymentsScreen extends StatefulWidget {
   const SalesmanPaymentsScreen({super.key});
@@ -235,6 +237,32 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
         builder: (_) => SalesmanPaymentDetailsScreen(payment: payment),
       ),
     );
+  }
+
+  Future<void> _shareReceipt(Map<String, dynamic> payment) async {
+    final customer = payment['customers'];
+    if (customer is! Map) return;
+    final customerId = payment['customer_id']?.toString();
+    if (customerId == null || customerId.isEmpty) return;
+    final model = Customer(
+      id: customerId,
+      businessName: customer['business_name']?.toString() ?? 'Customer',
+      location: customer['location']?.toString() ?? '',
+      phone: customer['phone']?.toString() ?? '',
+    );
+    try {
+      await PaymentReceiptShareService.shareLatest(
+        context: context,
+        customer: model,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    }
   }
 
   String _customerName(Map<String, dynamic> payment) {
@@ -934,6 +962,19 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        IconButton(
+                          tooltip: 'Share receipt',
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () => _shareReceipt(payment),
+                          icon: Icon(
+                            Icons.share_outlined,
+                            size: 17,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                        const SizedBox(width: 5),
                         if (hasSignature)
                           Icon(
                             Icons.draw_outlined,

@@ -104,9 +104,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
 
   bool _sameDay(DateTime a, DateTime b) {
     final local = a.toLocal();
-    return local.year == b.year &&
-        local.month == b.month &&
-        local.day == b.day;
+    return local.year == b.year && local.month == b.month && local.day == b.day;
   }
 
   List<PaymentTransaction> get _transactions => TransactionService.transactions;
@@ -152,7 +150,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
           : customer.location.trim();
       totals[name] =
           (totals[name] ?? 0) +
-          TransactionService.getCustomerBalance(customer.id);
+          math.max(0, TransactionService.getCustomerBalance(customer.id));
     }
     return Map.fromEntries(
       totals.entries.where((e) => e.value > 0).toList()

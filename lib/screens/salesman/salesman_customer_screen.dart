@@ -219,7 +219,7 @@ class _SalesmanCustomerDetailsScreenState
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    'Current amount due: ${CurrencyFormatter.rupees(currentBalance)}',
+                    CurrencyFormatter.customerBalance(currentBalance),
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -232,6 +232,9 @@ class _SalesmanCustomerDetailsScreenState
                   decoration: const InputDecoration(
                     labelText: 'Return amount',
                     prefixText: '₹ ',
+                    helperText:
+                        'Excess return becomes credit owed to the customer.',
+                    helperMaxLines: 2,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -291,7 +294,7 @@ class _SalesmanCustomerDetailsScreenState
                       final amount = double.tryParse(
                         amountController.text.trim().replaceAll(',', ''),
                       );
-                      if (amount == null || amount <= 0) {
+                      if (amount == null || !amount.isFinite || amount <= 0) {
                         ScaffoldMessenger.of(dialogContext).showSnackBar(
                           const SnackBar(
                             content: Text('Enter a valid return amount.'),
@@ -299,18 +302,6 @@ class _SalesmanCustomerDetailsScreenState
                         );
                         return;
                       }
-                      if (amount > currentBalance) {
-                        ScaffoldMessenger.of(dialogContext).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Return cannot exceed the current due of '
-                              '${CurrencyFormatter.rupees(currentBalance)}.',
-                            ),
-                          ),
-                        );
-                        return;
-                      }
-
                       setDialogState(() => isSaving = true);
                       try {
                         await Supabase.instance.client.rpc(
@@ -355,6 +346,22 @@ class _SalesmanCustomerDetailsScreenState
     amountController.dispose();
     notesController.dispose();
     if (saved != true || !mounted) return;
+
+    // A sales return is still a completed customer visit. Record it as
+    // handled today so the customer moves from Pending to Visited even when
+    // no payment was collected.
+    try {
+      final visitPosition =
+          await SalesmanVisitService.captureLocationIfAlreadyAllowed();
+      await SalesmanVisitService.recordStatus(
+        customerId: _customer.id,
+        status: 'paid',
+        capturedPosition: visitPosition,
+        note: 'Sales return recorded',
+      );
+    } catch (error) {
+      debugPrint('Could not record sales return visit status: $error');
+    }
 
     await Future.wait([
       TransactionService.loadCustomerBalances(),
@@ -552,7 +559,7 @@ class _SalesmanCustomerDetailsScreenState
                           const SizedBox(width: 8),
 
                           Text(
-                            'Amount Due',
+                            balance < 0 ? 'Owed to customer' : 'Amount Due',
 
                             style: TextStyle(
                               color: Theme.of(
@@ -568,7 +575,7 @@ class _SalesmanCustomerDetailsScreenState
                       const SizedBox(height: 8),
 
                       Text(
-                        CurrencyFormatter.rupees(balance),
+                        CurrencyFormatter.rupees(balance.abs()),
 
                         style: TextStyle(
                           fontSize: 32,
@@ -584,7 +591,9 @@ class _SalesmanCustomerDetailsScreenState
                       const SizedBox(height: 4),
 
                       Text(
-                        balance > 0
+                        balance < 0
+                            ? 'Owed to customer'
+                            : balance > 0
                             ? 'Outstanding amount'
                             : 'No outstanding balance',
 
@@ -667,9 +676,7 @@ class _SalesmanCustomerDetailsScreenState
                   width: double.infinity,
                   height: 50,
                   child: OutlinedButton.icon(
-                    onPressed: balance <= 0
-                        ? null
-                        : () => _recordSalesReturn(balance),
+                    onPressed: () => _recordSalesReturn(balance),
                     icon: const Icon(Icons.assignment_return_outlined),
                     label: const Text('Record Sales Return'),
                   ),

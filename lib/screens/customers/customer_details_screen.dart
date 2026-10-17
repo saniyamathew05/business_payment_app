@@ -1056,7 +1056,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             Future<void> save() async {
               final amount = double.tryParse(amountController.text.trim());
 
-              if (amount == null || amount <= 0) {
+              if (amount == null || !amount.isFinite || amount <= 0) {
                 ScaffoldMessenger.of(dialogContext).showSnackBar(
                   const SnackBar(
                     content: Text('Enter a valid purchase amount.'),
@@ -1627,21 +1627,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 amountController.text.trim().replaceAll(',', ''),
               );
 
-              if (amount == null || amount <= 0) {
+              if (amount == null || !amount.isFinite || amount <= 0) {
                 ScaffoldMessenger.of(dialogContext).showSnackBar(
                   const SnackBar(content: Text('Enter a valid return amount.')),
-                );
-
-                return;
-              }
-
-              if (amount > currentBalance) {
-                ScaffoldMessenger.of(dialogContext).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      'Return cannot be greater than the current amount due (${_money(currentBalance)}).',
-                    ),
-                  ),
                 );
 
                 return;
@@ -1698,7 +1686,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   mainAxisSize: MainAxisSize.min,
 
                   children: [
-                    _detailRow('Current Amount Due', _money(currentBalance)),
+                    _detailRow(
+                      currentBalance < 0
+                          ? 'Owed to customer'
+                          : 'Current Amount Due',
+                      _money(currentBalance.abs()),
+                    ),
 
                     const SizedBox(height: 16),
 
@@ -1713,6 +1706,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
                       decoration: const InputDecoration(
                         labelText: 'Return Amount',
+                        helperText:
+                            'Excess return becomes credit owed to the customer.',
+                        helperMaxLines: 2,
 
                         hintText: 'e.g. 500',
 
@@ -2148,8 +2144,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
-                                  const Text(
-                                    'Total Due',
+                                  Text(
+                                    currentBalance < 0
+                                        ? 'Owed to customer'
+                                        : 'Total Due',
                                     style: TextStyle(
                                       fontSize: 10,
                                       color: Color(0xFF8D5962),
@@ -2157,7 +2155,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    _money(currentBalance),
+                                    _money(currentBalance.abs()),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
@@ -2489,7 +2487,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           _detailRow('Phone number', customer.phone),
           _detailRow('Opening balance', _money(customer.openingBalance)),
           const Divider(height: 22),
-          _detailRow('Current balance', _money(currentBalance)),
+          _detailRow(
+            currentBalance < 0 ? 'Owed to customer' : 'Current balance',
+            _money(currentBalance.abs()),
+          ),
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,

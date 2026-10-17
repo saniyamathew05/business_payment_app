@@ -1008,7 +1008,11 @@ class _OwnerRouteManagementScreenState
                                 ),
                                 const SizedBox(height: 3),
                                 Text(
-                                  'Due ${CurrencyFormatter.rupees(TransactionService.getCustomerBalance(customer.id))}',
+                                  CurrencyFormatter.customerBalance(
+                                    TransactionService.getCustomerBalance(
+                                      customer.id,
+                                    ),
+                                  ),
                                   style: TextStyle(
                                     color: Theme.of(
                                       context,
