@@ -126,20 +126,22 @@ class SalesmanVisitService {
   }
 
   static Future<Map<String, String>> loadTodayStatuses() async {
+    final userId = _requireUserId();
     final now = DateTime.now();
     final startOfToday = DateTime(now.year, now.month, now.day);
     final startOfTomorrow = startOfToday.add(const Duration(days: 1));
     final rows = await _client
         .from('salesman_customer_daily_status')
         .select('customer_id, status')
-        .eq('status_date', _todayKey());
+        .eq('entered_by', userId)
+        .order('status_date', ascending: false);
 
     final result = <String, String>{};
     for (final row in rows) {
       final customerId = row['customer_id']?.toString();
       final status = row['status']?.toString();
       if (customerId != null && status != null) {
-        result[customerId] = status;
+        result.putIfAbsent(customerId, () => status);
       }
     }
 
@@ -148,6 +150,7 @@ class SalesmanVisitService {
     final payments = await _client
         .from('payments')
         .select('customer_id')
+        .eq('user_id', userId)
         .gte('transaction_date', startOfToday.toUtc().toIso8601String())
         .lt('transaction_date', startOfTomorrow.toUtc().toIso8601String());
     for (final payment in payments) {
@@ -155,6 +158,21 @@ class SalesmanVisitService {
       if (customerId != null) result[customerId] = 'paid';
     }
 
+    return result;
+  }
+
+  /// Owner view remains limited to statuses recorded today.
+  static Future<Map<String, String>> loadTodayStatusesForOwner() async {
+    final rows = await _client
+        .from('salesman_customer_daily_status')
+        .select('customer_id, status')
+        .eq('status_date', _todayKey());
+    final result = <String, String>{};
+    for (final row in rows) {
+      final customerId = row['customer_id']?.toString();
+      final status = row['status']?.toString();
+      if (customerId != null && status != null) result[customerId] = status;
+    }
     return result;
   }
 

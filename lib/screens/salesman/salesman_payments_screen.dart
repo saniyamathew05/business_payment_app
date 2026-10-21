@@ -934,6 +934,19 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
+                    if (discount > 0) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        'Discount given: ${CurrencyFormatter.rupees(discount)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Theme.of(context).colorScheme.tertiary,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

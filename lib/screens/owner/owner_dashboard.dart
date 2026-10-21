@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../models/customer.dart';
 import '../../models/transaction.dart';
@@ -33,6 +34,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
   String _period = 'Today';
   bool _refreshing = false;
   List<SalesmanDailyActivity> _todaySalesmanActivity = const [];
+  Map<String, _SalesmanTodayPayments> _todaySalesmanPayments = {};
   String? _visitLoadError;
 
   Color get _ink => Theme.of(context).colorScheme.onSurface;
@@ -77,12 +79,35 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
       try {
         _todaySalesmanActivity =
             await SalesmanVisitService.loadTodaySalesmanActivity();
+        final now = DateTime.now();
+        final start = DateTime(now.year, now.month, now.day);
+        final end = start.add(const Duration(days: 1));
+        final rows = await Supabase.instance.client
+            .from('payments')
+            .select('user_id, customer_id, amount_received, customers(business_name)')
+            .gte('transaction_date', start.toUtc().toIso8601String())
+            .lt('transaction_date', end.toUtc().toIso8601String());
+        final grouped = <String, _SalesmanTodayPayments>{};
+        for (final row in rows) {
+          final userId = row['user_id']?.toString();
+          if (userId == null || userId.isEmpty) continue;
+          final entry = grouped.putIfAbsent(userId, _SalesmanTodayPayments.new);
+          entry.received += (row['amount_received'] as num?)?.toDouble() ?? 0;
+          final customerName = row['customers'] is Map
+              ? row['customers']['business_name']?.toString()
+              : null;
+          if (customerName != null && customerName.isNotEmpty) {
+            entry.paidCustomers.add(customerName);
+          }
+        }
+        _todaySalesmanPayments = grouped;
         _visitLoadError = null;
       } catch (error) {
         // A missing optional visit table must not prevent the financial dashboard
         // from loading. Do not substitute sample visit data.
         _visitLoadError = error.toString();
         _todaySalesmanActivity = const [];
+        _todaySalesmanPayments = {};
       }
     } finally {
       if (mounted) setState(() => _refreshing = false);
@@ -109,7 +134,35 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
 
   List<PaymentTransaction> get _transactions => TransactionService.transactions;
 
-  double get _receivedToday => TransactionService.getCollectedToday();
+  DateTimeRange _selectedRange() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    switch (_period) {
+      case 'This week':
+        return DateTimeRange(
+          start: today.subtract(Duration(days: today.weekday - 1)),
+          end: today.add(const Duration(days: 1)),
+        );
+      case 'This month':
+        return DateTimeRange(
+          start: DateTime(today.year, today.month),
+          end: today.add(const Duration(days: 1)),
+        );
+      default:
+        return DateTimeRange(
+          start: today,
+          end: today.add(const Duration(days: 1)),
+        );
+    }
+  }
+
+  List<PaymentTransaction> _periodTransactions() {
+    final range = _selectedRange();
+    return _transactions.where((transaction) {
+      final date = transaction.transactionDate.toLocal();
+      return !date.isBefore(range.start) && date.isBefore(range.end);
+    }).toList();
+  }
 
   List<Customer> _todayRouteCustomers(List<Customer> customers) {
     final routeLocations = _todaySalesmanActivity
@@ -213,6 +266,11 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
           (customer) => TransactionService.getCustomerBalance(customer.id) > 0,
         )
         .length;
+    final periodTransactions = _periodTransactions();
+    final periodReceived = periodTransactions.fold<double>(
+      0,
+      (total, transaction) => total + transaction.amountReceived,
+    );
     return Container(
       color: _pageBackground,
       child: LayoutBuilder(
@@ -321,16 +379,22 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                       bg: const Color(0xFFEDE9FF),
                     ),
                     _MetricCard(
-                      title: 'Received Today',
-                      value: _money(_receivedToday),
-                      foot: '${TransactionService.getPaymentsToday()} payments',
+                      title: _period == 'Today'
+                          ? 'Received Today'
+                          : 'Received ${_period.replaceFirst('This ', '')}',
+                      value: _money(periodReceived),
+                      foot: '${periodTransactions.length} payments',
                       icon: Icons.trending_up_rounded,
                       color: _green,
                       bg: const Color(0xFFE5F7EF),
                     ),
                     _MetricCard(
-                      title: 'Pending Today',
-                      value: _money(_pendingToday(todayRouteCustomers)),
+                      title: _period == 'Today' ? 'Pending Today' : 'Total Pending',
+                      value: _money(
+                        _period == 'Today'
+                            ? _pendingToday(todayRouteCustomers)
+                            : receivable,
+                      ),
                       foot: !hasTodayRoute
                           ? 'No routes assigned today'
                           : '$todayRouteCustomersWithDues route customers with dues',
@@ -716,6 +780,20 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                 )
                 .length;
             final visited = activity.visitedCustomerCount;
+            final todayPayments =
+                _todaySalesmanPayments[activity.salesmanId] ??
+                _SalesmanTodayPayments();
+            final pending = customers
+                .where((customer) => locationSet.contains(
+                      customer.location.trim().toLowerCase(),
+                    ))
+                .fold<double>(
+                  0,
+                  (total, customer) => total + math.max(
+                    0,
+                    TransactionService.getCustomerBalance(customer.id),
+                  ),
+                );
             final progress = planned == 0
                 ? 0.0
                 : (visited / planned).clamp(0.0, 1.0).toDouble();
@@ -775,6 +853,20 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                               : '$visited/$planned customers visited today',
                           style: TextStyle(color: _muted, fontSize: 9),
                         ),
+                        const SizedBox(height: 5),
+                        Text(
+                          'Received today: ${_money(todayPayments.received)}  •  Yet to receive: ${_money(pending)}',
+                          style: TextStyle(color: _muted, fontSize: 9),
+                        ),
+                        if (todayPayments.paidCustomers.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            'Paid: ${todayPayments.paidCustomers.join(', ')}',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: _green, fontSize: 9),
+                          ),
+                        ],
                         const SizedBox(height: 5),
                         ClipRRect(
                           borderRadius: BorderRadius.circular(6),
@@ -1028,6 +1120,11 @@ class _MetricCard extends StatelessWidget {
 
 class _MetricColors {
   static const purple = Color(0xFF6846F5);
+}
+
+class _SalesmanTodayPayments {
+  double received = 0;
+  final Set<String> paidCustomers = <String>{};
 }
 
 class _DayTotals {

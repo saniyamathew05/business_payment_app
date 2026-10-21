@@ -1,4 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../models/customer.dart';
@@ -91,7 +97,7 @@ class _OwnerRouteManagementScreenState
             .select('salesman_id, locations, route_date')
             .lte('route_date', todayKey)
             .order('route_date', ascending: false),
-        SalesmanVisitService.loadTodayStatuses(),
+        SalesmanVisitService.loadTodayStatusesForOwner(),
       ]);
       final allProfiles = List<Map<String, dynamic>>.from(results[1] as List);
       final assignmentRows = List<Map<String, dynamic>>.from(
@@ -396,6 +402,10 @@ class _OwnerRouteManagementScreenState
         'route_date': dateKey,
         'locations': <String>[],
       }, onConflict: 'salesman_id,route_date');
+      await _client
+          .from('salesman_customer_daily_status')
+          .delete()
+          .eq('entered_by', salesmanId);
       if (!mounted) return;
       setState(() => _todayAssignments[salesmanId] = <String>[]);
       _message('Route assignment removed for $salesmanName.');
@@ -404,6 +414,95 @@ class _OwnerRouteManagementScreenState
       _message('Could not remove today’s route. Please try again.');
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _printAssignedCustomers({
+    required String salesmanName,
+    required String routeName,
+    required List<Customer> customers,
+  }) async {
+    final document = pw.Document();
+    document.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        build: (_) => [
+          pw.Text(
+            'Assigned customers',
+            style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 6),
+          pw.Text('Salesman: $salesmanName'),
+          if (routeName.isNotEmpty) pw.Text('Route: $routeName'),
+          pw.SizedBox(height: 14),
+          pw.Table.fromTextArray(
+            headers: const ['#', 'Customer', 'Location', 'Phone'],
+            data: [
+              for (var i = 0; i < customers.length; i++)
+                [
+                  '${i + 1}',
+                  customers[i].businessName,
+                  customers[i].location,
+                  customers[i].phone,
+                ],
+            ],
+            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+            headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
+            cellStyle: const pw.TextStyle(fontSize: 9),
+            cellPadding: const pw.EdgeInsets.all(5),
+          ),
+        ],
+      ),
+    );
+    final bytes = await document.save();
+    if (Platform.isAndroid || Platform.isIOS) {
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename: 'assigned_route.pdf',
+      );
+      return;
+    }
+    if (Platform.isMacOS) {
+      final safeName = salesmanName
+          .replaceAll(RegExp(r'[^a-zA-Z0-9]+'), '_')
+          .replaceAll(RegExp(r'^_+|_+$'), '');
+      final location = await getSaveLocation(
+        suggestedName: '${safeName.isEmpty ? 'salesman' : safeName}_route.pdf',
+        acceptedTypeGroups: const [
+          XTypeGroup(label: 'PDF Document', extensions: ['pdf']),
+        ],
+      );
+      if (location != null) {
+        await XFile.fromData(
+          bytes,
+          name: 'assigned_route.pdf',
+          mimeType: 'application/pdf',
+        ).saveTo(location.path);
+      }
+      return;
+    }
+    try {
+      await Printing.layoutPdf(onLayout: (_) async => bytes);
+    } catch (error) {
+      // Some Windows/macOS builds do not expose a printer service. Fall back
+      // to saving the generated PDF so the route list is still usable.
+      debugPrint('Printing unavailable, saving route list instead: $error');
+      final safeName = salesmanName
+          .replaceAll(RegExp(r'[^a-zA-Z0-9]+'), '_')
+          .replaceAll(RegExp(r'^_+|_+$'), '');
+      final location = await getSaveLocation(
+        suggestedName: '${safeName.isEmpty ? 'salesman' : safeName}_route.pdf',
+        acceptedTypeGroups: const [
+          XTypeGroup(label: 'PDF Document', extensions: ['pdf']),
+        ],
+      );
+      if (location != null) {
+        await XFile.fromData(
+          bytes,
+          name: 'assigned_route.pdf',
+          mimeType: 'application/pdf',
+        ).saveTo(location.path);
+      }
     }
   }
 
@@ -878,17 +977,33 @@ class _OwnerRouteManagementScreenState
                         subtitle: Text(subtitle),
                         trailing: assignedLocations.isEmpty
                             ? null
-                            : IconButton(
-                                tooltip: 'Remove active route assignment',
-                                onPressed: _saving
-                                    ? null
-                                    : () => _removeTodayAssignment(
-                                        salesmanId: salesmanId,
-                                        salesmanName:
-                                            (salesman['name'] ?? 'Salesman')
-                                                .toString(),
-                                      ),
-                                icon: const Icon(Icons.delete_outline_rounded),
+                            : Wrap(
+                                spacing: 2,
+                                children: [
+                                  IconButton(
+                                    tooltip: 'Print assigned customers',
+                                    onPressed: () => _printAssignedCustomers(
+                                      salesmanName:
+                                          (salesman['name'] ?? 'Salesman')
+                                              .toString(),
+                                      routeName: assignedRouteName ?? '',
+                                      customers: routeCustomers,
+                                    ),
+                                    icon: const Icon(Icons.print_outlined),
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Remove active route assignment',
+                                    onPressed: _saving
+                                        ? null
+                                        : () => _removeTodayAssignment(
+                                            salesmanId: salesmanId,
+                                            salesmanName:
+                                                (salesman['name'] ?? 'Salesman')
+                                                    .toString(),
+                                          ),
+                                    icon: const Icon(Icons.delete_outline_rounded),
+                                  ),
+                                ],
                               ),
                       ),
                       if (assignedLocations.isEmpty)

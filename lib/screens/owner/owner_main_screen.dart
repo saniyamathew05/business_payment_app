@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform;
 
@@ -1958,12 +1959,32 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
   String _dateFilter = 'all';
   String _methodFilter = 'all';
   DateTime? _selectedDate;
+  final Set<String> _hiddenPaymentIds = <String>{};
+
+  static const _hiddenPaymentsKey = 'owner_hidden_payment_ids';
 
   @override
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchChanged);
     CustomerService.dataVersion.addListener(_onCustomersChanged);
+    _loadHiddenPayments();
+  }
+
+  Future<void> _loadHiddenPayments() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _hiddenPaymentIds
+        ..clear()
+        ..addAll(prefs.getStringList(_hiddenPaymentsKey) ?? const []);
+    });
+  }
+
+  Future<void> _hidePayment(PaymentTransaction payment) async {
+    setState(() => _hiddenPaymentIds.add(payment.id));
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_hiddenPaymentsKey, _hiddenPaymentIds.toList());
   }
 
   @override
@@ -2032,6 +2053,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
         .map((customer) => customer.id)
         .toSet();
     final payments = TransactionService.transactions.where((payment) {
+      if (_hiddenPaymentIds.contains(payment.id)) return false;
       if (!activeCustomerIds.contains(payment.customerId)) return false;
       if (!_matchesDate(payment)) return false;
       if (_methodFilter != 'all') {
@@ -2682,6 +2704,11 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                                         icon: const Icon(Icons.edit_outlined),
                                       ),
                                       IconButton(
+                                        tooltip: 'Hide from this ledger',
+                                        onPressed: () => _hidePayment(payment),
+                                        icon: const Icon(Icons.visibility_off_outlined),
+                                      ),
+                                      IconButton(
                                         tooltip: 'Delete payment',
                                         onPressed: () =>
                                             _deletePayment(payment),
@@ -2709,6 +2736,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                       selectedMethod: _methodFilter,
                       colors: colors,
                       onEdit: () => _editPayment(payment),
+                      onHide: () => _hidePayment(payment),
                       onDelete: () => _deletePayment(payment),
                     ),
                   ),
@@ -2803,6 +2831,7 @@ class _PaymentTile extends StatelessWidget {
 
   final VoidCallback onDelete;
   final VoidCallback onEdit;
+  final VoidCallback onHide;
 
   const _PaymentTile({
     required this.payment,
@@ -2817,6 +2846,7 @@ class _PaymentTile extends StatelessWidget {
 
     required this.onDelete,
     required this.onEdit,
+    required this.onHide,
   });
 
   @override
@@ -2944,7 +2974,7 @@ class _PaymentTile extends StatelessWidget {
                   const SizedBox(height: 3),
 
                   Text(
-                    'Discount: ₹${payment.discount.toStringAsFixed(2)}',
+                    'Discount given: ₹${payment.discount.toStringAsFixed(2)}',
 
                     style: TextStyle(
                       color: colors.error,
@@ -2965,11 +2995,22 @@ class _PaymentTile extends StatelessWidget {
             tooltip: 'Payment actions',
 
             onSelected: (value) {
+              if (value == 'hide') onHide();
               if (value == 'delete') onDelete();
               if (value == 'edit') onEdit();
             },
 
             itemBuilder: (context) => const [
+              PopupMenuItem<String>(
+                value: 'hide',
+                child: Row(
+                  children: [
+                    Icon(Icons.visibility_off_outlined),
+                    SizedBox(width: 10),
+                    Text('Hide from ledger'),
+                  ],
+                ),
+              ),
               PopupMenuItem<String>(
                 value: 'edit',
                 child: Row(

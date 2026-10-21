@@ -17,6 +17,7 @@ import 'package:pdf/widgets.dart' as pw;
 
 import 'package:printing/printing.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../services/transaction_service.dart';
 import '../../services/payment_receipt_share_service.dart';
@@ -46,6 +47,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
   bool _isOwner = false;
   bool _sharingReceipt = false;
+  final Set<String> _hiddenHistoryIds = <String>{};
+  final Set<String> _selectedHistoryIds = <String>{};
+  bool _selectingHistory = false;
 
   final String _selectedHistorySection = 'purchases';
   String _activeTab = 'ledger';
@@ -58,12 +62,98 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     TransactionService.dataVersion.addListener(_handleTransactionDataChanged);
 
     _loadRole();
+    _loadHiddenHistory();
 
     _isRefreshingFromDataChange = true;
 
     _loadCustomerData().whenComplete(() {
       _isRefreshingFromDataChange = false;
     });
+  }
+
+  String get _hiddenHistoryKey =>
+      'customer_details_hidden_history_${widget.customer.id}';
+
+  Future<void> _loadHiddenHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _hiddenHistoryIds.addAll(prefs.getStringList(_hiddenHistoryKey) ?? const []);
+    });
+  }
+
+  Future<void> _hideHistoryEntry(Map<String, dynamic> entry) async {
+    final id = entry['id']?.toString();
+    if (id == null || id.isEmpty) return;
+    setState(() => _hiddenHistoryIds.add(id));
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_hiddenHistoryKey, _hiddenHistoryIds.toList());
+  }
+
+  Future<void> _selectAndHideEntries(List<Map<String, dynamic>> entries) async {
+    final selected = <String>{};
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Hide entries from customer history'),
+          content: SizedBox(
+            width: 480,
+            height: 420,
+            child: ListView(
+              children: entries.map((entry) {
+                final id = entry['id']?.toString() ?? '';
+                final type = entry['entry_type']?.toString() ?? 'entry';
+                return CheckboxListTile(
+                  value: selected.contains(id),
+                  title: Text(type == 'purchase' ? 'New Sale' : 'Payment'),
+                  subtitle: Text(_formatDate(entry['transaction_date'])),
+                  onChanged: id.isEmpty
+                      ? null
+                      : (value) => setDialogState(() {
+                          if (value == true) {
+                            selected.add(id);
+                          } else {
+                            selected.remove(id);
+                          }
+                        }),
+                );
+              }).toList(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: selected.isEmpty
+                  ? null
+                  : () => Navigator.pop(dialogContext, true),
+              child: const Text('Hide selected'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || selected.isEmpty || !mounted) return;
+    setState(() => _hiddenHistoryIds.addAll(selected));
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_hiddenHistoryKey, _hiddenHistoryIds.toList());
+  }
+
+  Future<void> _finishHistorySelection() async {
+    if (_selectedHistoryIds.isNotEmpty) {
+      setState(() {
+        _hiddenHistoryIds.addAll(_selectedHistoryIds);
+        _selectedHistoryIds.clear();
+        _selectingHistory = false;
+      });
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_hiddenHistoryKey, _hiddenHistoryIds.toList());
+    } else {
+      setState(() => _selectingHistory = false);
+    }
   }
 
   @override
@@ -1907,7 +1997,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   @override
   Widget build(BuildContext context) {
     final customer = _displayCustomer;
-    final allEntries = List<Map<String, dynamic>>.from(ledgerEntries)
+    final allEntries = ledgerEntries
+      .where((entry) => !_hiddenHistoryIds.contains(entry['id']?.toString()))
+      .map((entry) => Map<String, dynamic>.from(entry))
+      .toList()
       ..sort((a, b) {
         final aDate = DateTime.tryParse(
           a['transaction_date']?.toString() ?? '',
@@ -2193,6 +2286,29 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       const SizedBox(height: 12),
                       if (_activeTab == 'ledger') ...[
                         _buildLedgerFilterSelector(),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton.icon(
+                            onPressed: allEntries.isEmpty
+                                ? null
+                                : _selectingHistory
+                                ? _finishHistorySelection
+                                : () => setState(() {
+                                    _selectingHistory = true;
+                                  }),
+                            icon: Icon(
+                              _selectingHistory
+                                  ? Icons.visibility_off_outlined
+                                  : Icons.checklist_rounded,
+                              size: 18,
+                            ),
+                            label: Text(
+                              _selectingHistory
+                                  ? 'Hide selected (${_selectedHistoryIds.length})'
+                                  : 'Select entries to hide',
+                            ),
+                          ),
+                        ),
                         const SizedBox(height: 10),
                         _buildLedgerTableHeader(),
                         if (_filteredLedgerEntries(allEntries).isEmpty)
@@ -2760,6 +2876,23 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           children: [
             Row(
               children: [
+                if (_selectingHistory)
+                  Checkbox(
+                    value: _selectedHistoryIds.contains(
+                      entry['id']?.toString(),
+                    ),
+                    onChanged: (selected) {
+                      final id = entry['id']?.toString();
+                      if (id == null || id.isEmpty) return;
+                      setState(() {
+                        if (selected == true) {
+                          _selectedHistoryIds.add(id);
+                        } else {
+                          _selectedHistoryIds.remove(id);
+                        }
+                      });
+                    },
+                  ),
                 CircleAvatar(
                   radius: 21,
 
@@ -2812,6 +2945,24 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   ),
                 ),
 
+                if (!isPurchase || !_isOwner)
+                  PopupMenuButton<String>(
+                  tooltip: 'History options',
+                  onSelected: (value) {
+                    if (value == 'hide') _hideHistoryEntry(entry);
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem<String>(
+                      value: 'hide',
+                      child: ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(Icons.visibility_off_outlined),
+                        title: Text('Hide from customer history'),
+                      ),
+                    ),
+                  ],
+                ),
+
                 if (isPurchase && _isOwner)
                   PopupMenuButton<String>(
                     tooltip: 'Sale options',
@@ -2821,6 +2972,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       } else if (value == 'delete_accidental' ||
                           value == 'remove_paid') {
                         _deletePurchase(entry);
+                      } else if (value == 'hide') {
+                        _hideHistoryEntry(entry);
                       }
                     },
                     itemBuilder: (context) {
@@ -2828,6 +2981,14 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       final isAccidental = _isAccidentalPurchase(entry);
 
                       return [
+                        const PopupMenuItem<String>(
+                          value: 'hide',
+                          child: ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(Icons.visibility_off_outlined),
+                            title: Text('Hide from customer history'),
+                          ),
+                        ),
                         const PopupMenuItem<String>(
                           value: 'edit',
                           child: ListTile(
