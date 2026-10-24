@@ -130,9 +130,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
       // Salesmen share the payment history, including entries made by their
       // teammates. Receiver names are resolved separately through the
       // restricted RPC because salesman accounts cannot read other profiles.
-      final response = await _supabase
-          .from('payments')
-          .select('''
+      const paymentColumns = '''
             id,
             amount,
             discount,
@@ -149,8 +147,21 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
             customer_id,
             hidden_from_ledger,
             customers (business_name, location, phone)
-          ''')
-          .order('transaction_date', ascending: false);
+          ''';
+      List<dynamic> response;
+      try {
+        response = await _supabase
+            .from('payments')
+            .select(paymentColumns)
+            .order('transaction_date', ascending: false);
+      } catch (error) {
+        // Older databases may not have the optional shared visibility column.
+        debugPrint('Payment visibility column unavailable: $error');
+        response = await _supabase
+            .from('payments')
+            .select(paymentColumns.replaceFirst('hidden_from_ledger,', ''))
+            .order('transaction_date', ascending: false);
+      }
       final payments = List<Map<String, dynamic>>.from(
         response,
       ).where((payment) => payment['hidden_from_ledger'] != true).toList();
