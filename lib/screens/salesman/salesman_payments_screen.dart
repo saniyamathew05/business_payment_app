@@ -157,10 +157,27 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
       } catch (error) {
         // Older databases may not have the optional shared visibility column.
         debugPrint('Payment visibility column unavailable: $error');
-        response = await _supabase
-            .from('payments')
-            .select(paymentColumns.replaceFirst('hidden_from_ledger,', ''))
-            .order('transaction_date', ascending: false);
+        try {
+          response = await _supabase
+              .from('payments')
+              .select(paymentColumns.replaceFirst('hidden_from_ledger,', ''))
+              .order('transaction_date', ascending: false);
+        } catch (fallbackError) {
+          // A stale PostgREST schema cache can also reject the nested customer
+          // relationship. Load the payment rows so the screen remains usable.
+          debugPrint('Payment relationship unavailable: $fallbackError');
+          response = await _supabase
+              .from('payments')
+              .select(
+                paymentColumns
+                    .replaceFirst('hidden_from_ledger,', '')
+                    .replaceFirst(
+                      'customers (business_name, location, phone)',
+                      '',
+                    ),
+              )
+              .order('transaction_date', ascending: false);
+        }
       }
       final payments = List<Map<String, dynamic>>.from(
         response,
