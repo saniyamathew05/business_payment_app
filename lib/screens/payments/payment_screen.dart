@@ -1047,14 +1047,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Total entered: ${CurrencyFormatter.rupees(_enteredSplitTotal)}',
-                            style: TextStyle(
-                              color: colors.onSurface,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
                             'Amount received: ${CurrencyFormatter.rupees(_amountReceived)}',
                             style: TextStyle(
                               color: colors.onSurfaceVariant,
