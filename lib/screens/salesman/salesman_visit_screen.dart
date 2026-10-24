@@ -45,9 +45,13 @@ class _SalesmanVisitScreenState extends State<SalesmanVisitScreen> {
     if (_routeLocations.isEmpty) return <Customer>[];
     return _customers
         .where(
-          (customer) => _routeCustomerIds.isNotEmpty
-              ? _routeCustomerIds.contains(customer.id)
-              : _routeLocations.contains(customer.location.trim()),
+          (customer) =>
+              (TransactionService.customerBalances[customer.id] ??
+                      customer.openingBalance) >
+                  0 &&
+              (_routeCustomerIds.isNotEmpty
+                  ? _routeCustomerIds.contains(customer.id)
+                  : _routeLocations.contains(customer.location.trim())),
         )
         .toList()
       ..sort(
