@@ -79,7 +79,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     setState(() {
-      _hiddenHistoryIds.addAll(prefs.getStringList(_hiddenHistoryKey) ?? const []);
+      _hiddenHistoryIds.addAll(
+        prefs.getStringList(_hiddenHistoryKey) ?? const [],
+      );
     });
   }
 
@@ -1998,22 +2000,25 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   @override
   Widget build(BuildContext context) {
     final customer = _displayCustomer;
-    final allEntries = ledgerEntries
-      .where((entry) => !_hiddenHistoryIds.contains(entry['id']?.toString()))
-      .map((entry) => Map<String, dynamic>.from(entry))
-      .toList()
-      ..sort((a, b) {
-        final aDate = DateTime.tryParse(
-          a['transaction_date']?.toString() ?? '',
-        );
-        final bDate = DateTime.tryParse(
-          b['transaction_date']?.toString() ?? '',
-        );
-        if (aDate == null && bDate == null) return 0;
-        if (aDate == null) return 1;
-        if (bDate == null) return -1;
-        return bDate.compareTo(aDate);
-      });
+    final allEntries =
+        ledgerEntries
+            .where(
+              (entry) => !_hiddenHistoryIds.contains(entry['id']?.toString()),
+            )
+            .map((entry) => Map<String, dynamic>.from(entry))
+            .toList()
+          ..sort((a, b) {
+            final aDate = DateTime.tryParse(
+              a['transaction_date']?.toString() ?? '',
+            );
+            final bDate = DateTime.tryParse(
+              b['transaction_date']?.toString() ?? '',
+            );
+            if (aDate == null && bDate == null) return 0;
+            if (aDate == null) return 1;
+            if (bDate == null) return -1;
+            return bDate.compareTo(aDate);
+          });
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -2287,29 +2292,16 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       const SizedBox(height: 12),
                       if (_activeTab == 'ledger') ...[
                         _buildLedgerFilterSelector(),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton.icon(
-                            onPressed: allEntries.isEmpty
-                                ? null
-                                : _selectingHistory
-                                ? _finishHistorySelection
-                                : () => setState(() {
-                                    _selectingHistory = true;
-                                  }),
-                            icon: Icon(
-                              _selectingHistory
-                                  ? Icons.visibility_off_outlined
-                                  : Icons.checklist_rounded,
-                              size: 18,
-                            ),
-                            label: Text(
-                              _selectingHistory
-                                  ? 'Hide selected (${_selectedHistoryIds.length})'
-                                  : 'Select entries to hide',
+                        if (_selectingHistory)
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: _finishHistorySelection,
+                              child: Text(
+                                'Finish selection (${_selectedHistoryIds.length})',
+                              ),
                             ),
                           ),
-                        ),
                         const SizedBox(height: 10),
                         _buildLedgerTableHeader(),
                         if (_filteredLedgerEntries(allEntries).isEmpty)
@@ -2490,6 +2482,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       child: InkWell(
         borderRadius: BorderRadius.circular(9),
         onTap: () => setState(() => _activeTab = value),
+        onLongPress: value == 'ledger'
+            ? () => setState(() => _selectingHistory = true)
+            : null,
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 11),
           decoration: BoxDecoration(
@@ -2868,344 +2863,329 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         ? profile['name']?.toString() ?? 'User'
         : 'User';
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
+    return GestureDetector(
+      onLongPress: () {
+        if (!_selectingHistory) {
+          setState(() => _selectingHistory = true);
+        }
+      },
+      child: Card(
+        margin: const EdgeInsets.only(bottom: 12),
 
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
 
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
 
-          children: [
-            Row(
-              children: [
-                if (_selectingHistory)
-                  Checkbox(
-                    value: _selectedHistoryIds.contains(
-                      entry['id']?.toString(),
+            children: [
+              Row(
+                children: [
+                  if (_selectingHistory)
+                    Checkbox(
+                      value: _selectedHistoryIds.contains(
+                        entry['id']?.toString(),
+                      ),
+                      onChanged: (selected) {
+                        final id = entry['id']?.toString();
+                        if (id == null || id.isEmpty) return;
+                        setState(() {
+                          if (selected == true) {
+                            _selectedHistoryIds.add(id);
+                          } else {
+                            _selectedHistoryIds.remove(id);
+                          }
+                        });
+                      },
                     ),
-                    onChanged: (selected) {
-                      final id = entry['id']?.toString();
-                      if (id == null || id.isEmpty) return;
-                      setState(() {
-                        if (selected == true) {
-                          _selectedHistoryIds.add(id);
-                        } else {
-                          _selectedHistoryIds.remove(id);
+                  CircleAvatar(
+                    radius: 21,
+
+                    child: Icon(
+                      isPurchase
+                          ? Icons.shopping_cart_outlined
+                          : isReturn
+                          ? Icons.assignment_return_outlined
+                          : Icons.payments_outlined,
+                    ),
+                  ),
+
+                  const SizedBox(width: 12),
+
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+
+                      children: [
+                        Text(
+                          isPurchase
+                              ? 'New Sale'
+                              : isReturn
+                              ? 'Sales Return'
+                              : isBouncedCheck
+                              ? 'Cheque Bounced'
+                              : entry['is_bounced'] == true
+                              ? 'Payment Received (Bounced)'
+                              : 'Payment Received',
+
+                          style: TextStyle(
+                            fontSize: 17,
+
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+
+                        const SizedBox(height: 3),
+
+                        Text(
+                          _formatDate(entry['transaction_date']),
+
+                          style: TextStyle(
+                            fontSize: 12,
+
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  if (isPurchase && _isOwner)
+                    PopupMenuButton<String>(
+                      tooltip: 'Sale options',
+                      onSelected: (value) {
+                        if (value == 'edit') {
+                          _editPurchase(entry);
+                        } else if (value == 'delete_accidental' ||
+                            value == 'remove_paid') {
+                          _deletePurchase(entry);
+                        } else if (value == 'hide') {
+                          _hideHistoryEntry(entry);
                         }
-                      });
-                    },
-                  ),
-                CircleAvatar(
-                  radius: 21,
+                      },
+                      itemBuilder: (context) {
+                        final isPaid = _isPurchaseFullyPaid(entry);
+                        final isAccidental = _isAccidentalPurchase(entry);
 
-                  child: Icon(
-                    isPurchase
-                        ? Icons.shopping_cart_outlined
-                        : isReturn
-                        ? Icons.assignment_return_outlined
-                        : Icons.payments_outlined,
-                  ),
-                ),
-
-                const SizedBox(width: 12),
-
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-
-                    children: [
-                      Text(
-                        isPurchase
-                            ? 'New Sale'
-                            : isReturn
-                            ? 'Sales Return'
-                            : isBouncedCheck
-                            ? 'Cheque Bounced'
-                            : entry['is_bounced'] == true
-                            ? 'Payment Received (Bounced)'
-                            : 'Payment Received',
-
-                        style: TextStyle(
-                          fontSize: 17,
-
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-
-                      const SizedBox(height: 3),
-
-                      Text(
-                        _formatDate(entry['transaction_date']),
-
-                        style: TextStyle(
-                          fontSize: 12,
-
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                if (!isPurchase || !_isOwner)
-                  PopupMenuButton<String>(
-                  tooltip: 'History options',
-                  onSelected: (value) {
-                    if (value == 'hide') _hideHistoryEntry(entry);
-                  },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem<String>(
-                      value: 'hide',
-                      child: ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: Icon(Icons.visibility_off_outlined),
-                        title: Text('Hide from customer history'),
-                      ),
+                        return [
+                          const PopupMenuItem<String>(
+                            value: 'edit',
+                            child: ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(Icons.edit_outlined),
+                              title: Text('Edit Sale'),
+                            ),
+                          ),
+                          PopupMenuItem<String>(
+                            value: 'delete_accidental',
+                            enabled: isAccidental,
+                            child: const ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(Icons.delete_outline),
+                              title: Text('Delete Accidental Sale'),
+                            ),
+                          ),
+                          PopupMenuItem<String>(
+                            value: 'remove_paid',
+                            enabled: isPaid,
+                            child: const ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(Icons.remove_circle_outline),
+                              title: Text('Remove Paid Sale'),
+                            ),
+                          ),
+                        ];
+                      },
                     ),
-                  ],
-                ),
 
-                if (isPurchase && _isOwner)
-                  PopupMenuButton<String>(
-                    tooltip: 'Sale options',
-                    onSelected: (value) {
-                      if (value == 'edit') {
-                        _editPurchase(entry);
-                      } else if (value == 'delete_accidental' ||
-                          value == 'remove_paid') {
-                        _deletePurchase(entry);
-                      } else if (value == 'hide') {
-                        _hideHistoryEntry(entry);
-                      }
-                    },
-                    itemBuilder: (context) {
-                      final isPaid = _isPurchaseFullyPaid(entry);
-                      final isAccidental = _isAccidentalPurchase(entry);
+                  if (_isOwner &&
+                      type == 'payment' &&
+                      entry['is_bounced'] != true)
+                    IconButton(
+                      tooltip: 'Edit received payment',
+                      onPressed: () => _editReceivedPayment(entry),
+                      icon: const Icon(Icons.edit_outlined),
+                    ),
 
-                      return [
-                        const PopupMenuItem<String>(
-                          value: 'hide',
+                  if (!isPurchase &&
+                      !isReturn &&
+                      !isBouncedCheck &&
+                      paymentMethod == 'cheque')
+                    PopupMenuButton<String>(
+                      tooltip: 'Payment options',
+                      onSelected: (value) {
+                        if (value == 'bounce') {
+                          _markChequeBounced(entry);
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        PopupMenuItem<String>(
+                          value: 'bounce',
+                          enabled: entry['is_bounced'] != true,
                           child: ListTile(
                             contentPadding: EdgeInsets.zero,
-                            leading: Icon(Icons.visibility_off_outlined),
-                            title: Text('Hide from customer history'),
+                            leading: const Icon(Icons.money_off_csred_outlined),
+                            title: Text(
+                              entry['is_bounced'] == true
+                                  ? 'Cheque Already Bounced'
+                                  : 'Mark Cheque as Bounced',
+                            ),
                           ),
                         ),
-                        const PopupMenuItem<String>(
-                          value: 'edit',
-                          child: ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: Icon(Icons.edit_outlined),
-                            title: Text('Edit Sale'),
-                          ),
-                        ),
-                        PopupMenuItem<String>(
-                          value: 'delete_accidental',
-                          enabled: isAccidental,
-                          child: const ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: Icon(Icons.delete_outline),
-                            title: Text('Delete Accidental Sale'),
-                          ),
-                        ),
-                        PopupMenuItem<String>(
-                          value: 'remove_paid',
-                          enabled: isPaid,
-                          child: const ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: Icon(Icons.remove_circle_outline),
-                            title: Text('Remove Paid Sale'),
-                          ),
-                        ),
-                      ];
-                    },
+                      ],
+                    ),
+
+                  Text(
+                    isPurchase || isBouncedCheck
+                        ? '+${_money(amount)}'
+                        : '-${_money(amount)}',
+
+                    style: TextStyle(
+                      fontSize: 18,
+
+                      fontWeight: FontWeight.bold,
+
+                      color:
+                          isPurchase ||
+                              isBouncedCheck ||
+                              entry['is_bounced'] == true
+                          ? Colors.red
+                          : Colors.green,
+                    ),
                   ),
+                ],
+              ),
 
-                if (_isOwner &&
-                    type == 'payment' &&
-                    entry['is_bounced'] != true)
-                  IconButton(
-                    tooltip: 'Edit received payment',
-                    onPressed: () => _editReceivedPayment(entry),
-                    icon: const Icon(Icons.edit_outlined),
-                  ),
+              const Divider(height: 24),
 
-                if (!isPurchase &&
-                    !isReturn &&
-                    !isBouncedCheck &&
-                    paymentMethod == 'cheque')
-                  PopupMenuButton<String>(
-                    tooltip: 'Payment options',
-                    onSelected: (value) {
-                      if (value == 'bounce') {
-                        _markChequeBounced(entry);
-                      }
-                    },
-                    itemBuilder: (context) => [
-                      PopupMenuItem<String>(
-                        value: 'bounce',
-                        enabled: entry['is_bounced'] != true,
-                        child: ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: const Icon(Icons.money_off_csred_outlined),
-                          title: Text(
-                            entry['is_bounced'] == true
-                                ? 'Cheque Already Bounced'
-                                : 'Mark Cheque as Bounced',
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+              if (isPurchase) ...[
+                _detailRow('Original Amount', _money(amount + discount)),
 
-                Text(
-                  isPurchase || isBouncedCheck
-                      ? '+${_money(amount)}'
-                      : '-${_money(amount)}',
+                const SizedBox(height: 8),
 
-                  style: TextStyle(
-                    fontSize: 18,
+                _detailRow('Amount After Discount', _money(amount)),
 
-                    fontWeight: FontWeight.bold,
+                if (discount > 0) ...[
+                  const SizedBox(height: 8),
 
-                    color:
-                        isPurchase ||
-                            isBouncedCheck ||
-                            entry['is_bounced'] == true
-                        ? Colors.red
-                        : Colors.green,
+                  _detailRow('Discount Given', _money(discount)),
+                ],
+
+                const SizedBox(height: 8),
+
+                _detailRow('Balance Before', _money(balanceBefore)),
+
+                const SizedBox(height: 8),
+
+                _detailRow('Balance After', _money(balanceAfter)),
+              ] else if (isBouncedCheck) ...[
+                _detailRow(
+                  'Cheque Amount Returned to Due',
+                  _money(
+                    amount - ((entry['bank_charge'] as num?)?.toDouble() ?? 0),
                   ),
                 ),
-              ],
-            ),
 
-            const Divider(height: 24),
+                const SizedBox(height: 8),
 
-            if (isPurchase) ...[
-              _detailRow('Original Amount', _money(amount + discount)),
+                _detailRow(
+                  'Bank Charges',
+                  _money((entry['bank_charge'] as num?)?.toDouble() ?? 0),
+                ),
 
-              const SizedBox(height: 8),
+                const SizedBox(height: 8),
 
-              _detailRow('Amount After Discount', _money(amount)),
+                _detailRow('Total Added to Due', _money(amount)),
 
-              if (discount > 0) ...[
+                const SizedBox(height: 8),
+
+                _detailRow('Balance Before', _money(balanceBefore)),
+
+                const SizedBox(height: 8),
+
+                _detailRow('Balance After', _money(balanceAfter)),
+              ] else if (isReturn) ...[
+                _detailRow('Returned Amount', _money(amount)),
+
+                const SizedBox(height: 8),
+
+                _detailRow('Balance Before', _money(balanceBefore)),
+
+                const SizedBox(height: 8),
+
+                _detailRow('Balance After', _money(balanceAfter)),
+              ] else ...[
+                _detailRow('Amount Settled', _money(amount)),
+
                 const SizedBox(height: 8),
 
                 _detailRow('Discount Given', _money(discount)),
-              ],
 
-              const SizedBox(height: 8),
-
-              _detailRow('Balance Before', _money(balanceBefore)),
-
-              const SizedBox(height: 8),
-
-              _detailRow('Balance After', _money(balanceAfter)),
-            ] else if (isBouncedCheck) ...[
-              _detailRow(
-                'Cheque Amount Returned to Due',
-                _money(
-                  amount - ((entry['bank_charge'] as num?)?.toDouble() ?? 0),
-                ),
-              ),
-
-              const SizedBox(height: 8),
-
-              _detailRow(
-                'Bank Charges',
-                _money((entry['bank_charge'] as num?)?.toDouble() ?? 0),
-              ),
-
-              const SizedBox(height: 8),
-
-              _detailRow('Total Added to Due', _money(amount)),
-
-              const SizedBox(height: 8),
-
-              _detailRow('Balance Before', _money(balanceBefore)),
-
-              const SizedBox(height: 8),
-
-              _detailRow('Balance After', _money(balanceAfter)),
-            ] else if (isReturn) ...[
-              _detailRow('Returned Amount', _money(amount)),
-
-              const SizedBox(height: 8),
-
-              _detailRow('Balance Before', _money(balanceBefore)),
-
-              const SizedBox(height: 8),
-
-              _detailRow('Balance After', _money(balanceAfter)),
-            ] else ...[
-              _detailRow('Amount Settled', _money(amount)),
-
-              const SizedBox(height: 8),
-
-              _detailRow('Discount Given', _money(discount)),
-
-              const SizedBox(height: 8),
-
-              _detailRow('Actually Received', _money(amountReceived)),
-
-              const SizedBox(height: 8),
-
-              _detailRow('Payment Method', displayedPaymentMethod),
-
-              if (PaymentMethodBreakdown.display(paymentMethodNote)
-                  case final splitDetails?) ...[
                 const SizedBox(height: 8),
-                _detailRow('Payment Split', splitDetails),
-              ],
 
-              if (paymentMethodNote.isNotEmpty) ...[
+                _detailRow('Actually Received', _money(amountReceived)),
+
                 const SizedBox(height: 8),
-                _detailRow('Payment Method Note', paymentMethodNote),
+
+                _detailRow('Payment Method', displayedPaymentMethod),
+
+                if (PaymentMethodBreakdown.display(paymentMethodNote)
+                    case final splitDetails?) ...[
+                  const SizedBox(height: 8),
+                  _detailRow('Payment Split', splitDetails),
+                ],
+
+                if (paymentMethodNote.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  _detailRow('Payment Method Note', paymentMethodNote),
+                ],
+
+                const SizedBox(height: 8),
+
+                _detailRow('Received By', receivedBy),
+
+                const SizedBox(height: 8),
+
+                _detailRow('Balance Before', _money(balanceBefore)),
+
+                const SizedBox(height: 8),
+
+                _detailRow('Balance After', _money(balanceAfter)),
               ],
 
-              const SizedBox(height: 8),
+              if (notes.isNotEmpty) ...[
+                const SizedBox(height: 14),
 
-              _detailRow('Received By', receivedBy),
+                Container(
+                  width: double.infinity,
 
-              const SizedBox(height: 8),
+                  padding: const EdgeInsets.all(12),
 
-              _detailRow('Balance Before', _money(balanceBefore)),
+                  decoration: BoxDecoration(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
 
-              const SizedBox(height: 8),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
 
-              _detailRow('Balance After', _money(balanceAfter)),
-            ],
-
-            if (notes.isNotEmpty) ...[
-              const SizedBox(height: 14),
-
-              Container(
-                width: double.infinity,
-
-                padding: const EdgeInsets.all(12),
-
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-
-                  borderRadius: BorderRadius.circular(8),
+                  child: Text('Note: $notes'),
                 ),
+              ],
 
-                child: Text('Note: $notes'),
-              ),
+              if (!isPurchase &&
+                  entry['signature_path'] != null &&
+                  entry['signature_path'].toString().isNotEmpty) ...[
+                const SizedBox(height: 12),
+
+                _SignaturePreview(
+                  signaturePath: entry['signature_path'].toString(),
+                ),
+              ],
             ],
-
-            if (!isPurchase &&
-                entry['signature_path'] != null &&
-                entry['signature_path'].toString().isNotEmpty) ...[
-              const SizedBox(height: 12),
-
-              _SignaturePreview(
-                signaturePath: entry['signature_path'].toString(),
-              ),
-            ],
-          ],
+          ),
         ),
       ),
     );

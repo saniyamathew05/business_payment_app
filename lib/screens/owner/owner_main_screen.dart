@@ -2704,11 +2704,6 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                                         icon: const Icon(Icons.edit_outlined),
                                       ),
                                       IconButton(
-                                        tooltip: 'Hide from this ledger',
-                                        onPressed: () => _hidePayment(payment),
-                                        icon: const Icon(Icons.visibility_off_outlined),
-                                      ),
-                                      IconButton(
                                         tooltip: 'Delete payment',
                                         onPressed: () =>
                                             _deletePayment(payment),
@@ -2851,194 +2846,190 @@ class _PaymentTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
+    return GestureDetector(
+      onLongPress: onHide,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
 
-      padding: const EdgeInsets.all(15),
+        padding: const EdgeInsets.all(15),
 
-      decoration: BoxDecoration(
-        color: colors.surface,
+        decoration: BoxDecoration(
+          color: colors.surface,
 
-        borderRadius: BorderRadius.circular(17),
+          borderRadius: BorderRadius.circular(17),
 
-        border: Border.all(color: colors.outlineVariant),
-      ),
+          border: Border.all(color: colors.outlineVariant),
+        ),
 
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
 
-        children: [
-          Container(
-            width: 42,
+          children: [
+            Container(
+              width: 42,
 
-            height: 42,
+              height: 42,
 
-            decoration: BoxDecoration(
-              color: colors.primaryContainer,
+              decoration: BoxDecoration(
+                color: colors.primaryContainer,
 
-              borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+
+              child: Icon(
+                Icons.payments_outlined,
+
+                color: colors.onPrimaryContainer,
+
+                size: 20,
+              ),
             ),
 
-            child: Icon(
-              Icons.payments_outlined,
+            const SizedBox(width: 12),
 
-              color: colors.onPrimaryContainer,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
 
-              size: 20,
-            ),
-          ),
-
-          const SizedBox(width: 12),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-
-              children: [
-                Text(
-                  payment.customerName,
-
-                  maxLines: 1,
-
-                  overflow: TextOverflow.ellipsis,
-
-                  style: TextStyle(
-                    color: colors.onSurface,
-
-                    fontSize: 14,
-
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-
-                const SizedBox(height: 4),
-
-                Text(
-                  'Received by: ${payment.receivedBy}',
-
-                  maxLines: 1,
-
-                  overflow: TextOverflow.ellipsis,
-
-                  style: TextStyle(
-                    color: colors.onSurfaceVariant,
-
-                    fontSize: 11,
-                  ),
-                ),
-
-                const SizedBox(height: 3),
-
-                Text(
-                  date,
-
-                  style: TextStyle(
-                    color: colors.onSurfaceVariant,
-
-                    fontSize: 11,
-                  ),
-                ),
-
-                const SizedBox(height: 6),
-
-                Text(
-                  selectedMethod == 'all'
-                      ? 'Settlement: ₹${payment.amount.toStringAsFixed(2)}  •  '
-                            'Received: ₹${displayedReceived.toStringAsFixed(2)}'
-                      : 'Received via ${selectedMethod.toUpperCase()}: '
-                            '₹${displayedReceived.toStringAsFixed(2)}',
-
-                  style: TextStyle(
-                    color: colors.onSurfaceVariant,
-
-                    fontSize: 10.5,
-
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-
-                if (PaymentMethodBreakdown.display(payment.paymentMethodNote)
-                    case final splitDetails?) ...[
-                  const SizedBox(height: 3),
+                children: [
                   Text(
-                    splitDetails,
+                    payment.customerName,
+
+                    maxLines: 1,
+
+                    overflow: TextOverflow.ellipsis,
+
+                    style: TextStyle(
+                      color: colors.onSurface,
+
+                      fontSize: 14,
+
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+
+                  const SizedBox(height: 4),
+
+                  Text(
+                    'Received by: ${payment.receivedBy}',
+
+                    maxLines: 1,
+
+                    overflow: TextOverflow.ellipsis,
+
                     style: TextStyle(
                       color: colors.onSurfaceVariant,
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w600,
+
+                      fontSize: 11,
                     ),
                   ),
-                ],
 
-                if (payment.discount > 0) ...[
                   const SizedBox(height: 3),
 
                   Text(
-                    'Discount given: ₹${payment.discount.toStringAsFixed(2)}',
+                    date,
 
                     style: TextStyle(
-                      color: colors.error,
+                      color: colors.onSurfaceVariant,
+
+                      fontSize: 11,
+                    ),
+                  ),
+
+                  const SizedBox(height: 6),
+
+                  Text(
+                    selectedMethod == 'all'
+                        ? 'Settlement: ₹${payment.amount.toStringAsFixed(2)}  •  '
+                              'Received: ₹${displayedReceived.toStringAsFixed(2)}'
+                        : 'Received via ${selectedMethod.toUpperCase()}: '
+                              '₹${displayedReceived.toStringAsFixed(2)}',
+
+                    style: TextStyle(
+                      color: colors.onSurfaceVariant,
 
                       fontSize: 10.5,
 
                       fontWeight: FontWeight.w600,
                     ),
                   ),
+
+                  if (PaymentMethodBreakdown.display(payment.paymentMethodNote)
+                      case final splitDetails?) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      splitDetails,
+                      style: TextStyle(
+                        color: colors.onSurfaceVariant,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+
+                  if (payment.discount > 0) ...[
+                    const SizedBox(height: 3),
+
+                    Text(
+                      'Discount given: ₹${payment.discount.toStringAsFixed(2)}',
+
+                      style: TextStyle(
+                        color: colors.error,
+
+                        fontSize: 10.5,
+
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
 
-          const SizedBox(width: 6),
+            const SizedBox(width: 6),
 
-          PopupMenuButton<String>(
-            tooltip: 'Payment actions',
+            PopupMenuButton<String>(
+              tooltip: 'Payment actions',
 
-            onSelected: (value) {
-              if (value == 'hide') onHide();
-              if (value == 'delete') onDelete();
-              if (value == 'edit') onEdit();
-            },
+              onSelected: (value) {
+                if (value == 'hide') onHide();
+                if (value == 'delete') onDelete();
+                if (value == 'edit') onEdit();
+              },
 
-            itemBuilder: (context) => const [
-              PopupMenuItem<String>(
-                value: 'hide',
-                child: Row(
-                  children: [
-                    Icon(Icons.visibility_off_outlined),
-                    SizedBox(width: 10),
-                    Text('Hide from ledger'),
-                  ],
+              itemBuilder: (context) => const [
+                PopupMenuItem<String>(
+                  value: 'edit',
+                  child: Row(
+                    children: [
+                      Icon(Icons.edit_outlined),
+                      SizedBox(width: 10),
+                      Text('Edit Payment'),
+                    ],
+                  ),
                 ),
-              ),
-              PopupMenuItem<String>(
-                value: 'edit',
-                child: Row(
-                  children: [
-                    Icon(Icons.edit_outlined),
-                    SizedBox(width: 10),
-                    Text('Edit Payment'),
-                  ],
+                PopupMenuItem<String>(
+                  value: 'delete',
+
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_outline_rounded),
+
+                      SizedBox(width: 10),
+
+                      Text('Delete Payment'),
+                    ],
+                  ),
                 ),
+              ],
+
+              icon: Icon(
+                Icons.more_vert_rounded,
+                color: colors.onSurfaceVariant,
               ),
-              PopupMenuItem<String>(
-                value: 'delete',
-
-                child: Row(
-                  children: [
-                    Icon(Icons.delete_outline_rounded),
-
-                    SizedBox(width: 10),
-
-                    Text('Delete Payment'),
-                  ],
-                ),
-              ),
-            ],
-
-            icon: Icon(Icons.more_vert_rounded, color: colors.onSurfaceVariant),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
