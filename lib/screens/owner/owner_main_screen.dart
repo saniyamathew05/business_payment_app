@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform;
 
@@ -1983,6 +1984,14 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
 
   Future<void> _hidePayment(PaymentTransaction payment) async {
     setState(() => _hiddenPaymentIds.add(payment.id));
+    try {
+      await Supabase.instance.client
+          .from('payments')
+          .update({'hidden_from_ledger': true})
+          .eq('id', payment.id);
+    } catch (error) {
+      debugPrint('Could not sync hidden payment visibility: $error');
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_hiddenPaymentsKey, _hiddenPaymentIds.toList());
   }
