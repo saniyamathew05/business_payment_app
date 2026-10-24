@@ -230,13 +230,34 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       final ledger = await TransactionService.getCustomerLedger(
         widget.customer.id,
       );
+      final refusals = await Supabase.instance.client
+          .from('salesman_customer_daily_status')
+          .select('id, status_date, note, created_at, entered_by')
+          .eq('customer_id', widget.customer.id)
+          .eq('status', 'rejected')
+          .order('status_date', ascending: false);
+      final refusalEntries = (refusals as List)
+          .map<Map<String, dynamic>>(
+            (row) => {
+              'id': 'refusal-${row['id']}',
+              'entry_type': 'refusal',
+              'transaction_date':
+                  row['created_at']?.toString() ??
+                  '${row['status_date']}T00:00:00',
+              'status_date': row['status_date'],
+              'notes': row['note']?.toString() ?? 'Customer refused payment',
+              'amount': 0,
+              'amount_received': 0,
+            },
+          )
+          .toList();
 
       if (!mounted) return;
 
       setState(() {
         currentBalance = balance;
 
-        ledgerEntries = ledger;
+        ledgerEntries = [...ledger, ...refusalEntries];
 
         isLoading = false;
       });
@@ -2832,6 +2853,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     final isPurchase = type == 'purchase';
 
     final isReturn = type == 'return';
+    final isRefusal = type == 'refusal';
 
     final isBouncedCheck = type == 'bounced_check';
 
@@ -2902,7 +2924,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     radius: 21,
 
                     child: Icon(
-                      isPurchase
+                      isRefusal
+                          ? Icons.block_outlined
+                          : isPurchase
                           ? Icons.shopping_cart_outlined
                           : isReturn
                           ? Icons.assignment_return_outlined
@@ -2918,7 +2942,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
                       children: [
                         Text(
-                          isPurchase
+                          isRefusal
+                              ? 'Payment Refused'
+                              : isPurchase
                               ? 'New Sale'
                               : isReturn
                               ? 'Sales Return'
@@ -3048,7 +3074,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       fontWeight: FontWeight.bold,
 
                       color:
-                          isPurchase ||
+                          isRefusal ||
+                              isPurchase ||
                               isBouncedCheck ||
                               entry['is_bounced'] == true
                           ? Colors.red
@@ -3060,7 +3087,20 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
               const Divider(height: 24),
 
-              if (isPurchase) ...[
+              if (isRefusal) ...[
+                _detailRow(
+                  'Visit date',
+                  _formatDate(
+                    entry['status_date'] ?? entry['transaction_date'],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _detailRow('Outcome', 'Customer refused payment'),
+                if (notes.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  _detailRow('Note', notes),
+                ],
+              ] else if (isPurchase) ...[
                 _detailRow('Original Amount', _money(amount + discount)),
 
                 const SizedBox(height: 8),
