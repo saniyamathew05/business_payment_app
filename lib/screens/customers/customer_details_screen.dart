@@ -3119,7 +3119,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
                 const SizedBox(height: 8),
 
-                _detailRow('Balance After', _money(balanceAfter)),
+                _detailRow(
+                  balanceAfter < 0 ? 'Advance' : 'Balance After',
+                  _money(balanceAfter.abs()),
+                ),
               ] else if (isBouncedCheck) ...[
                 _detailRow(
                   'Cheque Amount Returned to Due',

@@ -213,13 +213,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   );
 
   double get _remainingBalance {
-    final result = _currentBalance - _settlementAmount;
-
-    if (result < 0) {
-      return 0;
-    }
-
-    return result;
+    return _currentBalance - _settlementAmount;
   }
 
   void _setFullBalance() {
@@ -342,16 +336,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
     if (amount <= 0) {
       _showMessage('Enter the amount being settled.', isError: true);
-
-      return;
-    }
-
-    if (amount > _currentBalance) {
-      _showMessage(
-        'Settlement amount cannot be greater than the current balance.',
-
-        isError: true,
-      );
 
       return;
     }
@@ -1108,7 +1092,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         ),
                         const SizedBox(height: 11),
                         _SummaryRow(
-                          label: 'Remaining balance',
+                          label: remaining < 0
+                              ? 'Advance'
+                              : 'Remaining balance',
                           value: '${CurrencyFormatter.rupees(remaining)}',
                           bold: true,
                         ),
