@@ -21,6 +21,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../services/transaction_service.dart';
 import '../../services/payment_receipt_share_service.dart';
+import '../../services/payment_method_breakdown.dart';
 
 import '../payments/payment_screen.dart';
 
@@ -2844,6 +2845,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         (type == 'payment' ? 'cash' : '');
 
     final paymentMethodNote = entry['payment_method_note']?.toString() ?? '';
+    final displayedPaymentMethod =
+        PaymentMethodBreakdown.display(paymentMethodNote) ??
+        _paymentMethodLabel(paymentMethod);
 
     final amount = (entry['amount'] as num?)?.toDouble() ?? 0;
 
@@ -3148,7 +3152,13 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
               const SizedBox(height: 8),
 
-              _detailRow('Payment Method', _paymentMethodLabel(paymentMethod)),
+              _detailRow('Payment Method', displayedPaymentMethod),
+
+              if (PaymentMethodBreakdown.display(paymentMethodNote)
+                  case final splitDetails?) ...[
+                const SizedBox(height: 8),
+                _detailRow('Payment Split', splitDetails),
+              ],
 
               if (paymentMethodNote.isNotEmpty) ...[
                 const SizedBox(height: 8),

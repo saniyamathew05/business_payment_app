@@ -1310,10 +1310,11 @@ class _SalesmanPaymentDetailsScreenState
 
     final notes = payment['notes'] as String? ?? '';
 
-    final paymentMethod = _formatPaymentMethod(payment['payment_method']);
-
     final paymentMethodNote =
         payment['payment_method_note']?.toString().trim() ?? '';
+    final paymentMethod =
+        PaymentMethodBreakdown.display(paymentMethodNote) ??
+        _formatPaymentMethod(payment['payment_method']);
 
     final hasSignaturePath =
         payment['signature_path'] != null &&

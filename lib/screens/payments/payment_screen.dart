@@ -49,6 +49,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   ];
 
   bool _splitPayment = false;
+  bool _syncingSplitAmount = false;
 
   final SignatureController _signatureController = SignatureController(
     penStrokeWidth: 3,
@@ -131,7 +132,23 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   void _updateSplitTotal() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    if (_splitPayment && !_syncingSplitAmount) {
+      final totalReceived = _enteredSplitTotal;
+      final desiredSettlement = totalReceived + _discount;
+      final current = _settlementAmount;
+      if ((current - desiredSettlement).abs() >= 0.005) {
+        _syncingSplitAmount = true;
+        _amountController.text = desiredSettlement <= 0
+            ? ''
+            : desiredSettlement.toStringAsFixed(2);
+        _amountController.selection = TextSelection.fromPosition(
+          TextPosition(offset: _amountController.text.length),
+        );
+        _syncingSplitAmount = false;
+      }
+    }
+    setState(() {});
   }
 
   double get _settlementAmount {

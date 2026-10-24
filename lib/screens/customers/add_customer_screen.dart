@@ -31,6 +31,8 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
   List<Customer> _similarCustomers = const [];
 
   List<String> _suggestedLocations = const [];
+  List<Map<String, dynamic>> _routeTemplates = const [];
+  final Set<String> _selectedRouteIds = <String>{};
 
   final SupabaseClient supabase = Supabase.instance.client;
 
@@ -41,6 +43,82 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
     locationController.addListener(_updateSuggestions);
     CustomerService.dataVersion.addListener(_updateSuggestions);
     _updateSuggestions();
+    _loadRouteTemplates();
+  }
+
+  Future<void> _loadRouteTemplates() async {
+    try {
+      final rows = await supabase
+          .from('salesman_route_templates')
+          .select('id, route_name, locations')
+          .order('route_name');
+      if (!mounted) return;
+      setState(() => _routeTemplates = List<Map<String, dynamic>>.from(rows));
+    } catch (error) {
+      debugPrint('Could not load route templates: $error');
+    }
+  }
+
+  Future<void> _selectRoutes() async {
+    final selected = Set<String>.from(_selectedRouteIds);
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Assign to routes'),
+          content: SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: _routeTemplates.map((route) {
+                  final id = route['id'].toString();
+                  return CheckboxListTile(
+                    dense: true,
+                    value: selected.contains(id),
+                    title: Text(route['route_name']?.toString() ?? 'Route'),
+                    onChanged: (value) => setDialogState(() {
+                      if (value == true) {
+                        selected.add(id);
+                      } else {
+                        selected.remove(id);
+                      }
+                    }),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                setState(() {
+                  _selectedRouteIds
+                    ..clear()
+                    ..addAll(selected);
+                });
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<String> get _selectedRouteLocations {
+    final locations = <String>{};
+    for (final route in _routeTemplates) {
+      if (!_selectedRouteIds.contains(route['id']?.toString())) continue;
+      final values = route['locations'];
+      if (values is List) locations.addAll(values.map((item) => item.toString()));
+    }
+    return locations.toList()..sort();
   }
 
   @override
@@ -563,6 +641,62 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                 ),
 
                 _buildLocationSuggestions(colorScheme),
+
+                if (_routeTemplates.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(4),
+                    onTap: _selectRoutes,
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Assign to routes (optional)',
+                        prefixIcon: Icon(Icons.alt_route_rounded),
+                        suffixIcon: Icon(Icons.arrow_drop_down),
+                        border: OutlineInputBorder(),
+                      ),
+                      child: Text(
+                        _selectedRouteIds.isEmpty
+                            ? 'No routes selected'
+                            : _routeTemplates
+                                .where((route) => _selectedRouteIds.contains(
+                                      route['id']?.toString(),
+                                    ))
+                                .map((route) => route['route_name']?.toString() ?? 'Route')
+                                .join(', '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                  if (_selectedRouteIds.isNotEmpty &&
+                      _selectedRouteLocations.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      initialValue: _selectedRouteLocations.contains(
+                        locationController.text.trim(),
+                      )
+                          ? locationController.text.trim()
+                          : null,
+                      decoration: const InputDecoration(
+                        labelText: 'Location in selected routes',
+                        prefixIcon: Icon(Icons.location_on_outlined),
+                        border: OutlineInputBorder(),
+                      ),
+                      items: _selectedRouteLocations
+                          .map(
+                            (location) => DropdownMenuItem(
+                              value: location,
+                              child: Text(location),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        locationController.text = value;
+                      },
+                    ),
+                  ],
+                ],
 
                 const SizedBox(height: 14),
 
