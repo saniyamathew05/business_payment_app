@@ -87,11 +87,25 @@ class _OwnerRouteManagementScreenState
       final now = DateTime.now();
       final todayKey =
           '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-      final results = await Future.wait<dynamic>([
-        _client
+      List<Map<String, dynamic>> routeRows;
+      try {
+        final rows = await _client
             .from('salesman_route_templates')
             .select('id, route_name, locations, customer_ids, updated_at')
-            .order('route_name'),
+            .order('route_name');
+        routeRows = List<Map<String, dynamic>>.from(rows);
+      } catch (error) {
+        // Keep existing routes usable until the optional customer_ids migration
+        // has been applied in Supabase.
+        debugPrint('Customer-level route column unavailable: $error');
+        final rows = await _client
+            .from('salesman_route_templates')
+            .select('id, route_name, locations, updated_at')
+            .order('route_name');
+        routeRows = List<Map<String, dynamic>>.from(rows);
+      }
+      final results = await Future.wait<dynamic>([
+        Future.value(routeRows),
         _client.from('profiles').select('id, name, role').order('name'),
         _client
             .from('salesman_daily_route_selections')
