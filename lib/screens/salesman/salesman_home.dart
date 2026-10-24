@@ -42,6 +42,7 @@ class _SalesmanHomeState extends State<SalesmanHome> {
   bool isLoading = true;
 
   List<String> selectedRouteLocations = <String>[];
+  Set<String> selectedRouteCustomerIds = <String>{};
 
   String? selectedRouteName;
 
@@ -172,6 +173,8 @@ class _SalesmanHomeState extends State<SalesmanHome> {
 
     try {
       selectedRouteLocations = await SalesmanVisitService.loadTodayRoute();
+      selectedRouteCustomerIds =
+          await SalesmanVisitService.loadTodayCustomerIds();
       try {
         selectedRouteName =
             await SalesmanVisitService.loadRouteNameForLocations(
@@ -195,6 +198,11 @@ class _SalesmanHomeState extends State<SalesmanHome> {
   }
 
   List<Customer> get routeCustomers {
+    if (selectedRouteCustomerIds.isNotEmpty) {
+      return CustomerService.customers
+          .where((customer) => selectedRouteCustomerIds.contains(customer.id))
+          .toList();
+    }
     final assignedLocations = selectedRouteLocations
         .map((location) => location.trim().toLowerCase())
         .where((location) => location.isNotEmpty)

@@ -47,6 +47,7 @@ class _OwnerRouteManagementScreenState
   String? _selectedRouteId;
   final Set<String> _selectedSalesmanIds = {};
   Set<String> _selectedLocations = {};
+  Set<String> _selectedCustomerIds = {};
 
   List<String> get _availableLocations =>
       CustomerService.customers
@@ -89,7 +90,7 @@ class _OwnerRouteManagementScreenState
       final results = await Future.wait<dynamic>([
         _client
             .from('salesman_route_templates')
-            .select('id, route_name, locations, updated_at')
+            .select('id, route_name, locations, customer_ids, updated_at')
             .order('route_name'),
         _client.from('profiles').select('id, name, role').order('name'),
         _client
@@ -145,6 +146,13 @@ class _OwnerRouteManagementScreenState
             ? <String>{}
             : Set<String>.from(
                 (_selectedRoute!['locations'] as List? ?? const []).map(
+                  (e) => e.toString(),
+                ),
+              );
+        _selectedCustomerIds = _selectedRoute == null
+            ? <String>{}
+            : Set<String>.from(
+                ((_selectedRoute!['customer_ids'] as List?) ?? const []).map(
                   (e) => e.toString(),
                 ),
               );
@@ -277,6 +285,7 @@ class _OwnerRouteManagementScreenState
           .from('salesman_route_templates')
           .update({
             'locations': locations,
+            'customer_ids': _selectedCustomerIds.toList(),
             'updated_at': DateTime.now().toUtc().toIso8601String(),
           })
           .eq('id', route['id'].toString());
@@ -286,7 +295,11 @@ class _OwnerRouteManagementScreenState
           (r) => r['id'].toString() == route['id'].toString(),
         );
         if (index >= 0)
-          _routes[index] = {..._routes[index], 'locations': locations};
+          _routes[index] = {
+            ..._routes[index],
+            'locations': locations,
+            'customer_ids': _selectedCustomerIds.toList(),
+          };
       });
       _message('Default locations saved for ${route['route_name']}.');
     } catch (error) {
@@ -295,6 +308,65 @@ class _OwnerRouteManagementScreenState
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _selectRouteCustomers() async {
+    final eligible =
+        CustomerService.customers
+            .where(
+              (customer) =>
+                  _selectedLocations.contains(customer.location.trim()),
+            )
+            .toList()
+          ..sort(
+            (a, b) => a.businessName.toLowerCase().compareTo(
+              b.businessName.toLowerCase(),
+            ),
+          );
+    final selected = Set<String>.from(_selectedCustomerIds);
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Select customers for this route'),
+          content: SizedBox(
+            width: 520,
+            height: 480,
+            child: ListView(
+              children: eligible
+                  .map(
+                    (customer) => CheckboxListTile(
+                      value: selected.contains(customer.id),
+                      title: Text(customer.businessName),
+                      subtitle: Text(customer.location),
+                      onChanged: (checked) => setDialogState(() {
+                        if (checked == true) {
+                          selected.add(customer.id);
+                        } else {
+                          selected.remove(customer.id);
+                        }
+                      }),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                setState(() => _selectedCustomerIds = selected);
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('Save selection'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _assignForToday() async {
@@ -321,6 +393,7 @@ class _OwnerRouteManagementScreenState
           .from('salesman_route_templates')
           .update({
             'locations': locations,
+            'customer_ids': _selectedCustomerIds.toList(),
             'updated_at': DateTime.now().toUtc().toIso8601String(),
           })
           .eq('id', route['id'].toString());
@@ -330,6 +403,7 @@ class _OwnerRouteManagementScreenState
               'salesman_id': salesmanId,
               'route_date': dateKey,
               'locations': locations,
+              'customer_ids': _selectedCustomerIds.toList(),
             },
           )
           .toList();
@@ -345,6 +419,7 @@ class _OwnerRouteManagementScreenState
           _routes[routeIndex] = {
             ..._routes[routeIndex],
             'locations': locations,
+            'customer_ids': _selectedCustomerIds.toList(),
           };
         }
         for (final salesmanId in salesmanIds) {
@@ -456,10 +531,7 @@ class _OwnerRouteManagementScreenState
     );
     final bytes = await document.save();
     if (Platform.isAndroid || Platform.isIOS) {
-      await Printing.sharePdf(
-        bytes: bytes,
-        filename: 'assigned_route.pdf',
-      );
+      await Printing.sharePdf(bytes: bytes, filename: 'assigned_route.pdf');
       return;
     }
     if (Platform.isMacOS) {
@@ -707,6 +779,14 @@ class _OwnerRouteManagementScreenState
                                                 const [])
                                             .map((value) => value.toString()),
                                       );
+                                _selectedCustomerIds = _selectedRoute == null
+                                    ? <String>{}
+                                    : Set<String>.from(
+                                        ((_selectedRoute!['customer_ids']
+                                                    as List?) ??
+                                                const [])
+                                            .map((value) => value.toString()),
+                                      );
                               });
                             },
                           ),
@@ -734,6 +814,18 @@ class _OwnerRouteManagementScreenState
                                     },
                             ),
                           ),
+                        const SizedBox(height: 8),
+                        OutlinedButton.icon(
+                          onPressed: _selectedRoute == null
+                              ? null
+                              : _selectRouteCustomers,
+                          icon: const Icon(Icons.people_alt_outlined),
+                          label: Text(
+                            _selectedCustomerIds.isEmpty
+                                ? 'Select customers (all in locations)'
+                                : '${_selectedCustomerIds.length} customers selected',
+                          ),
+                        ),
                         const SizedBox(height: 8),
                         Wrap(
                           spacing: 10,
@@ -1001,7 +1093,9 @@ class _OwnerRouteManagementScreenState
                                                 (salesman['name'] ?? 'Salesman')
                                                     .toString(),
                                           ),
-                                    icon: const Icon(Icons.delete_outline_rounded),
+                                    icon: const Icon(
+                                      Icons.delete_outline_rounded,
+                                    ),
                                   ),
                                 ],
                               ),

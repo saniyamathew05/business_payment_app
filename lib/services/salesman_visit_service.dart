@@ -58,6 +58,21 @@ class SalesmanVisitService {
     return <String>[];
   }
 
+  static Future<Set<String>> loadTodayCustomerIds() async {
+    final userId = _requireUserId();
+    final row = await _client
+        .from('salesman_daily_route_selections')
+        .select('customer_ids')
+        .eq('salesman_id', userId)
+        .lte('route_date', _todayKey())
+        .order('route_date', ascending: false)
+        .limit(1)
+        .maybeSingle();
+    final value = row?['customer_ids'];
+    if (value is List) return value.map((item) => item.toString()).toSet();
+    return <String>{};
+  }
+
   static Future<String?> loadRouteNameForLocations(
     List<String> assignedLocations,
   ) async {

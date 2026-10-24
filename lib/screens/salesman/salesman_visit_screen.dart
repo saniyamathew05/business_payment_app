@@ -24,6 +24,7 @@ class _SalesmanVisitScreenState extends State<SalesmanVisitScreen> {
   String? _error;
   String? _routeName;
   List<String> _routeLocations = <String>[];
+  Set<String> _routeCustomerIds = <String>{};
   Map<String, String> _statuses = <String, String>{};
   final Set<String> _draftLocations = <String>{};
   final Set<String> _busyCustomerIds = <String>{};
@@ -43,7 +44,11 @@ class _SalesmanVisitScreenState extends State<SalesmanVisitScreen> {
   List<Customer> get _routeCustomers {
     if (_routeLocations.isEmpty) return <Customer>[];
     return _customers
-        .where((customer) => _routeLocations.contains(customer.location.trim()))
+        .where(
+          (customer) => _routeCustomerIds.isNotEmpty
+              ? _routeCustomerIds.contains(customer.id)
+              : _routeLocations.contains(customer.location.trim()),
+        )
         .toList()
       ..sort(
         (a, b) => a.businessName.toLowerCase().compareTo(
@@ -68,6 +73,7 @@ class _SalesmanVisitScreenState extends State<SalesmanVisitScreen> {
       await TransactionService.loadTransactions();
       final values = await Future.wait<dynamic>([
         SalesmanVisitService.loadTodayRoute(),
+        SalesmanVisitService.loadTodayCustomerIds(),
         SalesmanVisitService.loadTodayStatuses(),
       ]);
       final routeLocations = List<String>.from(values[0] as List<String>);
@@ -83,7 +89,8 @@ class _SalesmanVisitScreenState extends State<SalesmanVisitScreen> {
       setState(() {
         _routeLocations = routeLocations;
         _routeName = routeName;
-        _statuses = Map<String, String>.from(values[1] as Map<String, String>);
+        _routeCustomerIds = Set<String>.from(values[1] as Set<String>);
+        _statuses = Map<String, String>.from(values[2] as Map<String, String>);
         _draftLocations
           ..clear()
           ..addAll(_routeLocations);
