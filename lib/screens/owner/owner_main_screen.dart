@@ -1960,6 +1960,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
   String _dateFilter = 'all';
   String _methodFilter = 'all';
   DateTime? _selectedDate;
+  DateTimeRange? _selectedDateRange;
   final Set<String> _hiddenPaymentIds = <String>{};
 
   static const _hiddenPaymentsKey = 'owner_hidden_payment_ids';
@@ -2045,13 +2046,14 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
       case 'month':
         return day.year == today.year && day.month == today.month;
       case 'date':
+        final range = _selectedDateRange;
+        if (range != null) {
+          final start = DateTime(range.start.year, range.start.month, range.start.day);
+          final end = DateTime(range.end.year, range.end.month, range.end.day);
+          return !day.isBefore(start) && !day.isAfter(end);
+        }
         if (_selectedDate == null) return true;
-        return day ==
-            DateTime(
-              _selectedDate!.year,
-              _selectedDate!.month,
-              _selectedDate!.day,
-            );
+        return day == DateTime(_selectedDate!.year, _selectedDate!.month, _selectedDate!.day);
       default:
         return true;
     }
@@ -2089,16 +2091,17 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
 
   Future<void> _chooseDate() async {
     final now = DateTime.now();
-    final picked = await showDatePicker(
+    final picked = await showDateRangePicker(
       context: context,
-      initialDate: _selectedDate ?? now,
       firstDate: DateTime(2000),
       lastDate: DateTime(now.year, now.month, now.day),
-      helpText: 'Filter ledger by date',
+      initialDateRange: _selectedDateRange ?? DateTimeRange(start: _selectedDate ?? now, end: _selectedDate ?? now),
+      helpText: 'Filter ledger by date range',
     );
     if (picked == null || !mounted) return;
     setState(() {
-      _selectedDate = DateTime(picked.year, picked.month, picked.day);
+      _selectedDate = picked.start;
+      _selectedDateRange = picked;
       _dateFilter = 'date';
     });
   }
@@ -2453,7 +2456,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                           ),
                           DropdownMenuItem(
                             value: 'date',
-                            child: Text('Choose date…'),
+                            child: Text('Choose date range…'),
                           ),
                         ],
                         onChanged: (value) {
@@ -2461,7 +2464,11 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                           if (value == 'date') {
                             _chooseDate();
                           } else {
-                            setState(() => _dateFilter = value);
+                            setState(() {
+                              _dateFilter = value;
+                              _selectedDateRange = null;
+                              _selectedDate = null;
+                            });
                           }
                         },
                       ),
@@ -2506,16 +2513,17 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                           _dateFilter = 'all';
                           _methodFilter = 'all';
                           _selectedDate = null;
+                          _selectedDateRange = null;
                         });
                       },
                       icon: const Icon(Icons.filter_alt_off_rounded),
                       label: const Text('Reset'),
                     ),
-                    if (_dateFilter == 'date' && _selectedDate != null)
+                    if (_dateFilter == 'date' && _selectedDateRange != null)
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         child: Text(
-                          'Date: ${_formatDate(_selectedDate!)}',
+                          'Dates: ${_formatDate(_selectedDateRange!.start)} – ${_formatDate(_selectedDateRange!.end)}',
                           style: TextStyle(color: colors.onSurfaceVariant),
                         ),
                       ),

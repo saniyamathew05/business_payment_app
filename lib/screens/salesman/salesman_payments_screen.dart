@@ -32,6 +32,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
   String _dateFilter = 'today';
   String _methodFilter = 'all';
   DateTime? _selectedDate;
+  DateTimeRange? _selectedDateRange;
   Set<String> _routeCustomerIds = <String>{};
 
   List<Map<String, dynamic>> get _paymentsForSummary => _payments
@@ -338,9 +339,14 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
       case 'month':
         return day.year == today.year && day.month == today.month;
       case 'date':
+        final range = _selectedDateRange;
+        if (range != null) {
+          final start = DateTime(range.start.year, range.start.month, range.start.day);
+          final end = DateTime(range.end.year, range.end.month, range.end.day);
+          return !day.isBefore(start) && !day.isAfter(end);
+        }
         final selected = _selectedDate;
-        return selected == null ||
-            day == DateTime(selected.year, selected.month, selected.day);
+        return selected == null || day == DateTime(selected.year, selected.month, selected.day);
       default:
         return true;
     }
@@ -381,16 +387,17 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
 
   Future<void> _chooseDate() async {
     final now = DateTime.now();
-    final picked = await showDatePicker(
+    final picked = await showDateRangePicker(
       context: context,
-      initialDate: _selectedDate ?? now,
       firstDate: DateTime(2000),
       lastDate: DateTime(now.year, now.month, now.day),
-      helpText: 'Filter team payments by date',
+      initialDateRange: _selectedDateRange ?? DateTimeRange(start: _selectedDate ?? now, end: _selectedDate ?? now),
+      helpText: 'Filter team payments by date range',
     );
     if (picked == null || !mounted) return;
     setState(() {
-      _selectedDate = DateTime(picked.year, picked.month, picked.day);
+      _selectedDate = picked.start;
+      _selectedDateRange = picked;
       _dateFilter = 'date';
     });
   }
@@ -402,6 +409,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
       _dateFilter = 'today';
       _methodFilter = 'all';
       _selectedDate = null;
+      _selectedDateRange = null;
     });
   }
 
@@ -547,7 +555,10 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
   Widget _buildFilters() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final wide = constraints.maxWidth >= 650;
+        // Keep every control on its own line on compact layouts. This avoids
+        // RenderFlex overflow when the screen is split or shown in a narrow
+        // desktop/mobile window.
+        final wide = constraints.maxWidth >= 900;
         return Wrap(
           spacing: 10,
           runSpacing: 10,
@@ -576,7 +587,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
               ),
             ),
             SizedBox(
-              width: wide ? 175 : 155,
+              width: wide ? 175 : constraints.maxWidth,
               child: DropdownButtonFormField<String>(
                 value: _dateFilter,
                 decoration: const InputDecoration(labelText: 'Date'),
@@ -585,7 +596,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
                   DropdownMenuItem(value: 'all', child: Text('All dates')),
                   DropdownMenuItem(value: 'week', child: Text('This week')),
                   DropdownMenuItem(value: 'month', child: Text('This month')),
-                  DropdownMenuItem(value: 'date', child: Text('Choose date…')),
+                  DropdownMenuItem(value: 'date', child: Text('Choose date range…')),
                 ],
                 onChanged: (value) {
                   if (value == null) return;
@@ -595,13 +606,14 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
                     setState(() {
                       _dateFilter = value;
                       _selectedDate = null;
+                      _selectedDateRange = null;
                     });
                   }
                 },
               ),
             ),
             SizedBox(
-              width: wide ? 175 : 155,
+              width: wide ? 175 : constraints.maxWidth,
               child: DropdownButtonFormField<String>(
                 value: _methodFilter,
                 decoration: const InputDecoration(labelText: 'Method'),
@@ -621,11 +633,13 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
               icon: const Icon(Icons.filter_alt_off_rounded),
               label: const Text('Reset'),
             ),
-            if (_dateFilter == 'date' && _selectedDate != null)
+            if (_dateFilter == 'date' && _selectedDateRange != null)
               Text(
-                'Date: ${_selectedDate!.day.toString().padLeft(2, '0')}/'
-                '${_selectedDate!.month.toString().padLeft(2, '0')}/'
-                '${_selectedDate!.year}',
+                'Dates: ${_selectedDateRange!.start.day}/${_selectedDateRange!.start.month}/${_selectedDateRange!.start.year} – '
+                '${_selectedDateRange!.end.day}/${_selectedDateRange!.end.month}/${_selectedDateRange!.end.year}',
+                maxLines: 2,
+                softWrap: true,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -845,7 +859,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
         onTap: () => _openPaymentDetails(payment),
 
         child: Padding(
-          padding: const EdgeInsets.all(15),
+          padding: const EdgeInsets.all(12),
 
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -869,7 +883,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
                 ),
               ),
 
-              const SizedBox(width: 13),
+              const SizedBox(width: 9),
 
               Expanded(
                 child: Column(
@@ -982,10 +996,10 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
                 ),
               ),
 
-              const SizedBox(width: 10),
+              const SizedBox(width: 6),
 
               SizedBox(
-                width: 100,
+                width: 86,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
