@@ -171,6 +171,7 @@ class _OwnerRouteManagementScreenState
                   (e) => e.toString(),
                 ),
               );
+        _customerWiseSelection = _selectedCustomerIds.isNotEmpty;
         _loading = false;
       });
     } catch (error) {
@@ -207,6 +208,8 @@ class _OwnerRouteManagementScreenState
         );
         _selectedRouteId = row['id'].toString();
         _selectedLocations = <String>{};
+        _selectedCustomerIds = <String>{};
+        _customerWiseSelection = false;
         _routeNameController.clear();
       });
       _message('Route created. Select its locations below.');
@@ -495,14 +498,20 @@ class _OwnerRouteManagementScreenState
         ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
       // The latest dated assignment remains active until the owner removes it.
       // Keep the saved named route in sync so salesmen can display its name.
-      await _client
-          .from('salesman_route_templates')
-          .update({
-            'locations': locations,
-            'customer_ids': _selectedCustomerIds.toList(),
-            'updated_at': DateTime.now().toUtc().toIso8601String(),
-          })
-          .eq('id', route['id'].toString());
+      try {
+        await _client
+            .from('salesman_route_templates')
+            .update({
+              'locations': locations,
+              'customer_ids': _selectedCustomerIds.toList(),
+              'updated_at': DateTime.now().toUtc().toIso8601String(),
+            })
+            .eq('id', route['id'].toString());
+      } catch (templateError) {
+        // Keep location-only assignments working until the optional
+        // customer_ids migration has been applied.
+        debugPrint('Route template update skipped: $templateError');
+      }
       final assignments = salesmanIds
           .map(
             (salesmanId) => {
@@ -513,9 +522,18 @@ class _OwnerRouteManagementScreenState
             },
           )
           .toList();
-      await _client
-          .from('salesman_daily_route_selections')
-          .upsert(assignments, onConflict: 'salesman_id,route_date');
+      try {
+        await _client
+            .from('salesman_daily_route_selections')
+            .upsert(assignments, onConflict: 'salesman_id,route_date');
+      } catch (_) {
+        await _client.from('salesman_daily_route_selections').upsert(
+          assignments
+              .map((assignment) => Map<String, dynamic>.from(assignment)..remove('customer_ids'))
+              .toList(),
+          onConflict: 'salesman_id,route_date',
+        );
+      }
       if (!mounted) return;
       setState(() {
         final routeIndex = _routes.indexWhere(
@@ -1054,7 +1072,7 @@ class _OwnerRouteManagementScreenState
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Select one or more salesmen. The route stays assigned until you remove it from Salesmen & Assigned Routes. You can choose another route for different salesmen.',
+                          'Select one or more salesmen. The route stays assigned until you remove it from Salesmen & Assigned Routes. Assignments use the customer or location selection above.',
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                         const SizedBox(height: 8),
@@ -1091,7 +1109,9 @@ class _OwnerRouteManagementScreenState
                               _saving ||
                                   _selectedRoute == null ||
                                   _selectedSalesmanIds.isEmpty ||
-                                  _selectedLocations.isEmpty
+                                  (_customerWiseSelection
+                                      ? _selectedCustomerIds.isEmpty
+                                      : _selectedLocations.isEmpty)
                               ? null
                               : _assignForToday,
                           icon: const Icon(Icons.route_outlined),
