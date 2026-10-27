@@ -212,7 +212,7 @@ class _SalesmanHomeState extends State<SalesmanHome> {
 
   List<Customer> get routeCustomers {
     if (selectedRouteCustomerIds.isNotEmpty) {
-      return CustomerService.customers
+      final customers = CustomerService.customers
           .where(
             (customer) =>
                 selectedRouteCustomerIds.contains(customer.id) &&
@@ -222,6 +222,14 @@ class _SalesmanHomeState extends State<SalesmanHome> {
                     todaysCustomerStatuses.containsKey(customer.id)),
           )
           .toList();
+      final order = {
+        for (var i = 0; i < selectedRouteCustomerIds.length; i++)
+          selectedRouteCustomerIds.elementAt(i): i,
+      };
+      customers.sort(
+        (a, b) => (order[a.id] ?? 999999).compareTo(order[b.id] ?? 999999),
+      );
+      return customers;
     }
     final assignedLocations = selectedRouteLocations
         .map((location) => location.trim().toLowerCase())

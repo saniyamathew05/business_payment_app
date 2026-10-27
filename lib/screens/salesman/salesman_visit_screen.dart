@@ -43,7 +43,7 @@ class _SalesmanVisitScreenState extends State<SalesmanVisitScreen> {
 
   List<Customer> get _routeCustomers {
     if (_routeLocations.isEmpty) return <Customer>[];
-    return _customers
+    final customers = _customers
         .where(
           (customer) =>
               ((TransactionService.customerBalances[customer.id] ??
@@ -55,11 +55,23 @@ class _SalesmanVisitScreenState extends State<SalesmanVisitScreen> {
                   : _routeLocations.contains(customer.location.trim())),
         )
         .toList()
-      ..sort(
+      ;
+    if (_routeCustomerIds.isNotEmpty) {
+      final order = {
+        for (var i = 0; i < _routeCustomerIds.length; i++)
+          _routeCustomerIds.elementAt(i): i,
+      };
+      customers.sort(
+        (a, b) => (order[a.id] ?? 999999).compareTo(order[b.id] ?? 999999),
+      );
+    } else {
+      customers.sort(
         (a, b) => a.businessName.toLowerCase().compareTo(
           b.businessName.toLowerCase(),
         ),
       );
+    }
+    return customers;
   }
 
   @override
