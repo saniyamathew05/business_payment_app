@@ -558,7 +558,9 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
         // Keep every control on its own line on compact layouts. This avoids
         // RenderFlex overflow when the screen is split or shown in a narrow
         // desktop/mobile window.
-        final wide = constraints.maxWidth >= 1200;
+        // Keep filters stacked unless there is ample room. This also covers
+        // desktop windows rendered at a scaled/tablet viewport width.
+        final wide = constraints.maxWidth >= 2200;
         return Wrap(
           spacing: 10,
           runSpacing: 10,
