@@ -339,8 +339,13 @@ class _OwnerRouteManagementScreenState
     final eligible = CustomerService.customers
             .where(
               (customer) =>
-                  _customerWiseSelection ||
-                  _selectedLocations.contains(customer.location.trim()),
+                  // A route should only be assigned from customers who
+                  // currently owe money. A customer whose balance reaches
+                  // zero after today's payment remains visible to the
+                  // salesman through today's visit/status record.
+                  TransactionService.getCustomerBalance(customer.id) > 0 &&
+                  (_customerWiseSelection ||
+                      _selectedLocations.contains(customer.location.trim())),
             )
             .toList()
           ..sort(
