@@ -59,7 +59,7 @@ class SalesmanVisitService {
   }
 
   static Future<Set<String>> loadTodayCustomerIds() async {
-    final userId = _requireUserId();
+    _requireUserId();
     final row = await _client
         .from('salesman_daily_route_selections')
         .select('customer_ids')
@@ -141,14 +141,13 @@ class SalesmanVisitService {
   }
 
   static Future<Map<String, String>> loadTodayStatuses() async {
-    final userId = _requireUserId();
+    _requireUserId();
     final now = DateTime.now();
     final startOfToday = DateTime(now.year, now.month, now.day);
     final startOfTomorrow = startOfToday.add(const Duration(days: 1));
     final rows = await _client
         .from('salesman_customer_daily_status')
         .select('customer_id, status')
-        .eq('entered_by', userId)
         .eq('status_date', _todayKey());
 
     final result = <String, String>{};
@@ -166,7 +165,6 @@ class SalesmanVisitService {
       final payments = await _client
           .from('payments')
           .select('customer_id')
-          .eq('user_id', userId)
           .gte('transaction_date', startOfToday.toUtc().toIso8601String())
           .lt('transaction_date', startOfTomorrow.toUtc().toIso8601String());
       for (final payment in payments) {
