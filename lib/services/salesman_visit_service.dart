@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -70,6 +72,14 @@ class SalesmanVisitService {
         .maybeSingle();
     final value = row?['customer_ids'];
     if (value is List) return value.map((item) => item.toString()).toSet();
+    if (value is String && value.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(value);
+        if (decoded is List) {
+          return decoded.map((item) => item.toString()).toSet();
+        }
+      } catch (_) {}
+    }
     return <String>{};
   }
 
