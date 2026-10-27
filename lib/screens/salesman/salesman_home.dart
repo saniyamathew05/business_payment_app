@@ -191,8 +191,7 @@ class _SalesmanHomeState extends State<SalesmanHome> {
       for (final transaction in TransactionService.transactions) {
         final date = transaction.transactionDate.toLocal();
         final transactionDay = DateTime(date.year, date.month, date.day);
-        if (transaction.transactionType == 'payment_received' &&
-            transactionDay == today) {
+        if (transactionDay == today && transaction.amountReceived > 0) {
           todaysCustomerStatuses[transaction.customerId] = 'paid';
         }
       }
