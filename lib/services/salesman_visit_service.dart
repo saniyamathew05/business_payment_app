@@ -149,7 +149,7 @@ class SalesmanVisitService {
         .from('salesman_customer_daily_status')
         .select('customer_id, status')
         .eq('entered_by', userId)
-        .order('status_date', ascending: false);
+        .eq('status_date', _todayKey());
 
     final result = <String, String>{};
     for (final row in rows) {
@@ -162,15 +162,19 @@ class SalesmanVisitService {
 
     // Payments saved before visit-status recording was fixed (or recorded by
     // the owner/another salesman) still count as a completed visit today.
-    final payments = await _client
-        .from('payments')
-        .select('customer_id')
-        .eq('user_id', userId)
-        .gte('transaction_date', startOfToday.toUtc().toIso8601String())
-        .lt('transaction_date', startOfTomorrow.toUtc().toIso8601String());
-    for (final payment in payments) {
-      final customerId = payment['customer_id']?.toString();
-      if (customerId != null) result[customerId] = 'paid';
+    try {
+      final payments = await _client
+          .from('payments')
+          .select('customer_id')
+          .eq('user_id', userId)
+          .gte('transaction_date', startOfToday.toUtc().toIso8601String())
+          .lt('transaction_date', startOfTomorrow.toUtc().toIso8601String());
+      for (final payment in payments) {
+        final customerId = payment['customer_id']?.toString();
+        if (customerId != null) result[customerId] = 'paid';
+      }
+    } catch (_) {
+      // Keep visit statuses usable if payment history is temporarily restricted.
     }
 
     return result;
