@@ -186,6 +186,16 @@ class _SalesmanHomeState extends State<SalesmanHome> {
       }
 
       todaysCustomerStatuses = await SalesmanVisitService.loadTodayStatuses();
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      for (final transaction in TransactionService.transactions) {
+        final date = transaction.transactionDate.toLocal();
+        final transactionDay = DateTime(date.year, date.month, date.day);
+        if (transaction.transactionType == 'payment_received' &&
+            transactionDay == today) {
+          todaysCustomerStatuses[transaction.customerId] = 'paid';
+        }
+      }
     } catch (error) {
       debugPrint('Could not load route/status data: $error');
     }
