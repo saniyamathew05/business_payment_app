@@ -184,7 +184,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
       }
       final payments = List<Map<String, dynamic>>.from(
         response,
-      ).where((payment) => payment['hidden_from_ledger'] != true).toList();
+      );
 
       // Resolve only the receiver names needed for these visible payment rows.
       // The RPC exposes names, not the rest of another user's profile.
