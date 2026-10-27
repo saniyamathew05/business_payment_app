@@ -216,9 +216,10 @@ class _SalesmanHomeState extends State<SalesmanHome> {
           .where(
             (customer) =>
                 selectedRouteCustomerIds.contains(customer.id) &&
-                (TransactionService.customerBalances[customer.id] ??
-                        customer.openingBalance) >
-                    0,
+                ((TransactionService.customerBalances[customer.id] ??
+                            customer.openingBalance) >
+                        0 ||
+                    todaysCustomerStatuses.containsKey(customer.id)),
           )
           .toList();
     }
@@ -230,9 +231,10 @@ class _SalesmanHomeState extends State<SalesmanHome> {
       return assignedLocations.contains(
             customer.location.trim().toLowerCase(),
           ) &&
-          (TransactionService.customerBalances[customer.id] ??
-                  customer.openingBalance) >
-              0;
+          ((TransactionService.customerBalances[customer.id] ??
+                      customer.openingBalance) >
+                  0 ||
+              todaysCustomerStatuses.containsKey(customer.id));
     }).toList();
   }
 
