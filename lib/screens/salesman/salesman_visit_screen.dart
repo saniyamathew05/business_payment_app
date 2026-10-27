@@ -46,9 +46,10 @@ class _SalesmanVisitScreenState extends State<SalesmanVisitScreen> {
     return _customers
         .where(
           (customer) =>
-              (TransactionService.customerBalances[customer.id] ??
-                      customer.openingBalance) >
-                  0 &&
+              ((TransactionService.customerBalances[customer.id] ??
+                          customer.openingBalance) >
+                      0 ||
+                  _statuses.containsKey(customer.id)) &&
               (_routeCustomerIds.isNotEmpty
                   ? _routeCustomerIds.contains(customer.id)
                   : _routeLocations.contains(customer.location.trim())),
