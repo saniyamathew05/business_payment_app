@@ -59,7 +59,7 @@ class SalesmanVisitService {
   }
 
   static Future<Set<String>> loadTodayCustomerIds() async {
-    _requireUserId();
+    final userId = _requireUserId();
     final row = await _client
         .from('salesman_daily_route_selections')
         .select('customer_ids')
