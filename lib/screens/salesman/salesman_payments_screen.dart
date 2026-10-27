@@ -31,6 +31,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
   String _searchQuery = '';
   String _dateFilter = 'today';
   String _methodFilter = 'all';
+  String _salesmanFilter = 'all';
   DateTime? _selectedDate;
   DateTimeRange? _selectedDateRange;
   Set<String> _routeCustomerIds = <String>{};
@@ -38,6 +39,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
   List<Map<String, dynamic>> get _paymentsForSummary => _payments
       .where(_matchesDate)
       .where(_matchesMethod)
+      .where(_matchesSalesman)
       .toList(growable: false);
 
   double get _selectedPaymentsTotal =>
@@ -366,11 +368,17 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
         );
   }
 
+  bool _matchesSalesman(Map<String, dynamic> payment) {
+    if (_salesmanFilter == 'all') return true;
+    return payment['user_id']?.toString() == _salesmanFilter;
+  }
+
   List<Map<String, dynamic>> get _filteredPayments {
     final query = _searchQuery.trim().toLowerCase();
     return _payments.where((payment) {
       if (!_matchesDate(payment)) return false;
       if (!_matchesMethod(payment)) return false;
+      if (!_matchesSalesman(payment)) return false;
       if (query.isEmpty) return true;
       final customer = payment['customers'];
       final values = <String>[
@@ -408,6 +416,7 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
       _searchQuery = '';
       _dateFilter = 'today';
       _methodFilter = 'all';
+      _salesmanFilter = 'all';
       _selectedDate = null;
       _selectedDateRange = null;
     });
@@ -630,6 +639,27 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
                     setState(() => _methodFilter = value ?? 'all'),
               ),
             ),
+            SizedBox(
+              width: wide ? 210 : constraints.maxWidth,
+              child: DropdownButtonFormField<String>(
+                value: _salesmanFilter,
+                decoration: const InputDecoration(labelText: 'Salesman'),
+                items: [
+                  const DropdownMenuItem(
+                    value: 'all',
+                    child: Text('All salesmen'),
+                  ),
+                  ..._salesmanOptions.entries.map(
+                    (entry) => DropdownMenuItem(
+                      value: entry.key,
+                      child: Text(entry.value, overflow: TextOverflow.ellipsis),
+                    ),
+                  ),
+                ],
+                onChanged: (value) =>
+                    setState(() => _salesmanFilter = value ?? 'all'),
+              ),
+            ),
             OutlinedButton.icon(
               onPressed: _resetFilters,
               icon: const Icon(Icons.filter_alt_off_rounded),
@@ -650,6 +680,16 @@ class _SalesmanPaymentsScreenState extends State<SalesmanPaymentsScreen> {
         );
       },
     );
+  }
+
+  Map<String, String> get _salesmanOptions {
+    final result = <String, String>{};
+    for (final payment in _payments) {
+      final id = payment['user_id']?.toString();
+      if (id == null || id.isEmpty) continue;
+      result[id] = _receiverName(payment);
+    }
+    return result;
   }
 
   Widget _buildSummaryHeader() {
